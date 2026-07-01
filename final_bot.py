@@ -6,17 +6,17 @@ import plotly.graph_objects as go
 # إعدادات الصفحة والمظهر العام
 st.set_page_config(page_title="محلل الأسهم الذكي المطور 📈", layout="wide")
 
-st.title("🚀 النظام المتكامل للفحص الفني وزخم السوق المصري")
+st.title("🚀 النظام المتكامل للفحص الفني وزحم السوق المصري")
 st.write("مرحباً بك! يمكنك الآن فحص سهم معين بالتفصيل أو عمل مسح شامل للسوق.")
 
 # قائمة أشهر الأسهم المصرية مسبقة التعريف لتسهيل الاختيار
 EGYPTIAN_STOCKS = {
+    "السويدي إليكتريك (SWDY)": "SWDY.CA",
     "البنك التجاري الدولي (COMI)": "COMI.CA",
     "الجيزة العامة للمقاولات (GGCC)": "GGCC.CA",
     "جهينة للصناعات الغذائية (JUFO)": "JUFO.CA",
     "طلعت مصطفى (TMGH)": "TMGH.CA",
     "فاركو للأدوية (PHAR)": "PHAR.CA",
-    "السويدي إليكتريك (SWDY)": "SWDY.CA",
     "سيدي كرير للبتروكيماويات (SKPC)": "SKPC.CA",
     "طاقة عربية (TAQA)": "TAQA.CA",
     "مصر للألومنيوم (EGAL)": "EGAL.CA",
@@ -42,11 +42,16 @@ with tab1:
     if st.button("تحليل السهم ورسم المنحنى ⚡"):
         with st.spinner("جاري جلب البيانات وحساب المؤشرات الفنية..."):
             try:
-                df = yf.download(ticker_input, period="100d", progress=False)
+                # استخدام جلب البيانات مع إلغاء تجميع العناوين المتعددة لضمان استقرار الجداول
+                df = yf.download(ticker_input, period="100d", progress=False, group_by='ticker')
                 
                 if df.empty:
                     st.error("لم نتمكن من العثور على بيانات لهذا الرمز.")
                 else:
+                    # معالجة استواء الأعمدة لو كانت مجمعة تلو اسم السهم
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.dropdown(0) if hasattr(df.columns, 'dropdown') else df.columns.get_level_values(-1)
+                    
                     # حساب المؤشرات
                     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
                     df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
@@ -63,12 +68,14 @@ with tab1:
                     df['Lower_Band'] = df['MA20'] - (2 * df['STD20'])
                     
                     last_row = df.iloc[-1]
-                    price = float(last_row['Close'])
-                    ema9 = float(last_row['EMA9'])
-                    ema21 = float(last_row['EMA21'])
-                    rsi = float(last_row['RSI_14'])
-                    upper = float(last_row['Upper_Band'])
-                    lower = float(last_row['Lower_Band'])
+                    
+                    # استخراج القيم الفردية بدقة متناهية لمنع تداخل الجداول
+                    price = float(last_row['Close'].iloc[0]) if isinstance(last_row['Close'], pd.Series) else float(last_row['Close'])
+                    ema9 = float(last_row['EMA9'].iloc[0]) if isinstance(last_row['EMA9'], pd.Series) else float(last_row['EMA9'])
+                    ema21 = float(last_row['EMA21'].iloc[0]) if isinstance(last_row['EMA21'], pd.Series) else float(last_row['EMA21'])
+                    rsi = float(last_row['RSI_14'].iloc[0]) if isinstance(last_row['RSI_14'], pd.Series) else float(last_row['RSI_14'])
+                    upper = float(last_row['Upper_Band'].iloc[0]) if isinstance(last_row['Upper_Band'], pd.Series) else float(last_row['Upper_Band'])
+                    lower = float(last_row['Lower_Band'].iloc[0]) if isinstance(last_row['Lower_Band'], pd.Series) else float(last_row['Lower_Band'])
                     
                     # الخوارزمية الرقمية للقرار
                     if ema9 > ema21 and rsi < 70 and price < upper:
@@ -96,20 +103,24 @@ with tab1:
                     c3.metric("EMA9 (السريع)", f"{ema9:.2f}")
                     c4.metric("EMA21 (البطيء)", f"{ema21:.2f}")
                     
-                    # --- إضافة الرسم البياني التفاعلي ---
+                    # --- الرسم البياني التفاعلي ---
                     st.markdown("### 📈 الرسم البياني وحركة المتوسطات الفنية")
                     fig = go.Figure()
-                    # رسم خط السعر الإغلاقي
-                    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='سعر الإغلاق', line=dict(color='#1f77b4', width=2)))
-                    # رسم خطوط المتوسطات
-                    fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'], name='EMA 9 (سريع)', line=dict(color='#2ca02c', dash='dot')))
-                    fig.add_trace(go.Scatter(x=df.index, y=df['EMA21'], name='EMA 21 (بطيء)', line=dict(color='#d62728', dash='dash')))
+                    
+                    # تجهيز سلاسل البيانات للرسم لضمان خلوها من العناوين الفرعية
+                    y_close = df['Close'].squeeze()
+                    y_ema9 = df['EMA9'].squeeze()
+                    y_ema21 = df['EMA21'].squeeze()
+                    
+                    fig.add_trace(go.Scatter(x=df.index, y=y_close, name='سعر الإغلاق', line=dict(color='#1f77b4', width=2)))
+                    fig.add_trace(go.Scatter(x=df.index, y=y_ema9, name='EMA 9 (سريع)', line=dict(color='#2ca02c', dash='dot')))
+                    fig.add_trace(go.Scatter(x=df.index, y=y_ema21, name='EMA 21 (بطيء)', line=dict(color='#d62728', dash='dash')))
                     
                     fig.update_layout(title=f"تحليل حركة {ticker_input} ومتوسطاته الزخمية", template="plotly_dark", xaxis_title="التاريخ", yaxis_title="السعر (ج.م)", height=500)
                     st.plotly_chart(fig, use_container_width=True)
                     
             except Exception as e:
-                st.error(f"حدث خطأ أثناء جلب البيانات: {e}")
+                st.error(f"حدث خطأ أثناء تحليل البيانات: {e}")
 
 # --- التبويب الثاني: المسح الجماعي الفوري للمحفظة والسوق ---
 with tab2:
@@ -121,8 +132,11 @@ with tab2:
         with st.spinner("جاري فحص وتصفية جميع الأسهم..."):
             for name, ticker in EGYPTIAN_STOCKS.items():
                 try:
-                    stock_df = yf.download(ticker, period="50d", progress=False)
+                    stock_df = yf.download(ticker, period="50d", progress=False, group_by='ticker')
                     if not stock_df.empty:
+                        if isinstance(stock_df.columns, pd.MultiIndex):
+                            stock_df.columns = stock_df.columns.dropdown(0) if hasattr(stock_df.columns, 'dropdown') else stock_df.columns.get_level_values(-1)
+                        
                         stock_df['EMA9'] = stock_df['Close'].ewm(span=9, adjust=False).mean()
                         stock_df['EMA21'] = stock_df['Close'].ewm(span=21, adjust=False).mean()
                         
@@ -137,13 +151,12 @@ with tab2:
                         stock_df['Upper_Band'] = stock_df['MA20'] + (2 * stock_df['STD20'])
                         
                         row = stock_df.iloc[-1]
-                        p = float(row['Close'])
-                        e9 = float(row['EMA9'])
-                        e21 = float(row['EMA21'])
-                        r = float(row['RSI_14'])
-                        u = float(row['Upper_Band'])
+                        p = float(row['Close'].iloc[0]) if isinstance(row['Close'], pd.Series) else float(row['Close'])
+                        e9 = float(row['EMA9'].iloc[0]) if isinstance(row['EMA9'], pd.Series) else float(row['EMA9'])
+                        e21 = float(row['EMA21'].iloc[0]) if isinstance(row['EMA21'], pd.Series) else float(row['EMA21'])
+                        r = float(row['RSI_14'].iloc[0]) if isinstance(row['RSI_14'], pd.Series) else float(row['RSI_14'])
+                        u = float(row['Upper_Band'].iloc[0]) if isinstance(row['Upper_Band'], pd.Series) else float(row['Upper_Band'])
                         
-                        # تحديد القرار
                         if e9 > e21 and r < 70 and p < u:
                             status = "🟢 STRONG BUY"
                         elif p >= u or r >= 70:
@@ -161,7 +174,9 @@ with tab2:
                 except:
                     continue
             
-            # تحويل النتائج إلى جدول منظم وعرضه للمستخدم
-            result_df = pd.DataFrame(scan_results)
-            st.success("تم الانتهاء من فحص وتصفية السوق بنجاح!")
-            st.dataframe(result_df, use_container_width=True)
+            if scan_results:
+                result_df = pd.DataFrame(scan_results)
+                st.success("تم الانتهاء من فحص وتصفية السوق بنجاح!")
+                st.dataframe(result_df, use_container_width=True)
+            else:
+                st.warning("لم نتمكن من جمع نتائج الفحص حالياً، برجاء المحاولة لاحقاً.")
