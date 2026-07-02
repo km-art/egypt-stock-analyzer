@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
 import requests
 import numpy as np
 
@@ -90,7 +89,7 @@ with tab2:
             elif r < 35 and m < 35:
                 bottom_accumulation_results.append({"اسم الشركة": name, "السعر الحالي (ج.م)": round(p, 2), "مؤشر الزخم RSI": round(r, 1)})
             elif row['EMA9'] > row['EMA21']:
-                entry = {"اسم الشركة": name, "السعر الحالي (ج.م)": round(p, 2), "النقاط الفنية والسيولة (من 100)": 75}
+                entry = {"اسم الشركة": name, "السعر الحالي (ج.م)": round(p, 2), "النقاط الفنية": 75}
                 if vol_today > row['Vol_MA10'] * 1.15: short_term_trading.append(entry)
                 else: long_term_investment.append(entry)
 
@@ -106,12 +105,25 @@ with tab2:
             msg += "\n"
         if long_term_investment:
             msg += "📈 *أقوى أسهم الاتجاه الصاعد المستقر:*\n"
-            for item in sorted(long_term_investment, key=lambda x: x['النقاط الفنية والسيولة (من 100)'], reverse=True)[:5]:
-                msg += f"- {item['اسم الشركة']} | السعر: {item['السعر الحالي (ج.م)']} ج.م\n"
+            for item in long_term_investment[:5]: msg += f"- {item['اسم الشركة']} | السعر: {item['السعر الحالي (ج.م)']} ج.م\n"
             msg += "\n"
         if short_term_trading:
             msg += "⚡ *أقوى أسهم المضاربة اللحظية وعزم السيولة:*\n"
             for item in short_term_trading[:5]: msg += f"- {item['اسم الشركة']} | السعر: {item['السعر الحالي (ج.م)']} ج.م\n"
         
         send_telegram_alert(msg)
-        st.success("تم إرسال التقرير الكامل للتليجرام بنجاح! 🦅")
+        
+        # --- عرض البيانات في Streamlit ---
+        st.success("تم إرسال التقرير للتليجرام، وإليك التفاصيل:")
+        if fresh_cross_results:
+            st.subheader("🌟 تأسيس المركز")
+            st.dataframe(pd.DataFrame(fresh_cross_results), use_container_width=True)
+        if bottom_accumulation_results:
+            st.subheader("📥 رادار تصيد القيعان (الحيتان 🐋)")
+            st.dataframe(pd.DataFrame(bottom_accumulation_results), use_container_width=True)
+        if long_term_investment:
+            st.subheader("📈 الاستثمار المستقر")
+            st.dataframe(pd.DataFrame(long_term_investment), use_container_width=True)
+        if short_term_trading:
+            st.subheader("⚡ المضاربة اللحظية")
+            st.dataframe(pd.DataFrame(short_term_trading), use_container_width=True)
