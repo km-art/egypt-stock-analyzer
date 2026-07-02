@@ -9,13 +9,20 @@ import math
 # إعدادات الصفحة
 st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
-# القيمة الدفترية وربحية السهم للأسهم (يمكنك تحديث الأرقام هنا)
+# 1. التعريفات الأساسية في الأعلى
+ALL_EGX_STOCKS = {
+    "السويدي إليكتريك": "SWDY.CA", "البنك التجاري الدولي": "COMI.CA", 
+    "مجموعة طلعت مصطفى": "TMGH.CA", "مصرف أبوظبي الإسلامي": "ADIB.CA"
+}
+
 BASIC_FUNDAMENTALS = {
     "السويدي إليكتريك": {"BV": 15.5, "EPS": 4.2},
     "البنك التجاري الدولي": {"BV": 45.0, "EPS": 8.5},
     "مجموعة طلعت مصطفى": {"BV": 12.0, "EPS": 2.1},
+    "مصرف أبوظبي الإسلامي": {"BV": 25.0, "EPS": 5.5}
 }
 
+# 2. الدوال
 def calculate_fair_value(name):
     if name in BASIC_FUNDAMENTALS:
         data = BASIC_FUNDAMENTALS[name]
@@ -29,45 +36,43 @@ def calculate_indicators(df):
     df['Vol_MA10'] = df['Volume'].rolling(window=10).mean()
     return df
 
-st.title("🦅 قناص البورصة المصرية (النسخة المتكاملة)")
+st.title("🦅 قناص البورصة المصرية (النسخة المتكاملة والمصححة)")
 
-# (باقي إعدادات التليجرام كما هي)
-# ...
-
-# الجزء الخاص بالمسح (تم تصحيح المسافات هنا)
+# 3. قسم الفرز
 if st.button("تشغيل الفرز والترتيب الاحترافي اللحظي 🚀"):
-    fresh_cross_results = []
-    # ... (تعريف باقي القوائم)
-    
+    results = []
     tickers_list = list(ALL_EGX_STOCKS.values())
-    all_data = yf.download(tickers_list, period="60d", progress=False, group_by='ticker')
     
-    for name, ticker in ALL_EGX_STOCKS.items():
-        try:
-            stock_df = all_data[ticker].dropna(how='all')
-            if stock_df.empty or len(stock_df) < 25: continue
-            
-            stock_df = calculate_indicators(stock_df)
-            row = stock_df.iloc[-1]
-            p = float(row['Close'])
-            
-            if float(row['Volume']) < 3000000: continue
-            
-            # حساب القيمة العادلة ودمجها
-            fair_val = calculate_fair_value(name)
-            
-            data_entry = {
-                "اسم الشركة": name,
-                "السعر الحالي": round(p, 2),
-                "القيمة العادلة": fair_val if fair_val else "غير متاحة",
-                "حالة السعر": "لقطة (أرخص)" if (fair_val and p < fair_val) else "مبالغ فيه/عادل",
-                "مؤشر الزخم RSI": round(float(row['RSI_14']), 1) if 'RSI_14' in row else 0
-            }
-            
-            # هنا يمكنك إضافة logic التصنيف الخاص بك
-            fresh_cross_results.append(data_entry)
-            
-        except Exception as e:
-            continue
-            
-    st.dataframe(pd.DataFrame(fresh_cross_results))
+    with st.spinner("جاري المسح..."):
+        all_data = yf.download(tickers_list, period="60d", progress=False, group_by='ticker')
+        
+        for name, ticker in ALL_EGX_STOCKS.items():
+            try:
+                # التأكد من التعامل مع البيانات سواء سهم واحد أو أكثر
+                stock_df = all_data[ticker] if len(tickers_list) > 1 else all_data
+                stock_df = stock_df.dropna(how='all')
+                
+                if stock_df.empty or len(stock_df) < 25: continue
+                
+                stock_df = calculate_indicators(stock_df)
+                row = stock_df.iloc[-1]
+                p = float(row['Close'])
+                
+                if float(row['Volume']) < 50000: continue
+                
+                fair_val = calculate_fair_value(name)
+                
+                data_entry = {
+                    "اسم الشركة": name,
+                    "السعر الحالي": round(p, 2),
+                    "القيمة العادلة": fair_val if fair_val else "غير متاحة",
+                    "حالة السعر": "لقطة (أرخص)" if (fair_val and p < fair_val) else "مبالغ فيه/عادل"
+                }
+                results.append(data_entry)
+            except Exception:
+                continue
+                
+    if results:
+        st.dataframe(pd.DataFrame(results), use_container_width=True)
+    else:
+        st.warning("لم يتم العثور على بيانات مطابقة للشروط.")
