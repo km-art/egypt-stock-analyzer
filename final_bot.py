@@ -33,7 +33,7 @@ def send_telegram_alert(message):
 # القائمة الكاملة لرموز أسهم السوق المصري (EGX) على Yahoo Finance
 ALL_EGX_STOCKS = {
     "السويدي إليكتريك": "SWDY.CA", "البنك التجاري الدولي": "COMI.CA", "مصرف أبوظبي الإسلامي": "ADIB.CA",
-    "مجموعة طلعت مصطفى": "TMGH.CA", "بلتون المالية القابضة": "BTFH.CA", "فوري للمدفوعات الإلكترونية": "FWRY.CA",
+    "مجموعة طلعت مستفى": "TMGH.CA", "بلتون المالية القابضة": "BTFH.CA", "فوري للمدفوعات الإلكترونية": "FWRY.CA",
     "إي فاينانس للاستثمارات": "EFIH.CA", "أبو قير للأسمدة": "ABUK.CA", "مصر لإنتاج الأسمدة - موبكو": "MFPC.CA",
     "سيدي كرير للبتروكيماويات": "SKPC.CA", "الأسكندرية لتداول الحاويات": "ALCN.CA", "المصرية للاتصالات": "ETEL.CA",
     "إعمار مصر للتنمية": "EMFD.CA", "مدينة مصر للإسكان": "MASR.CA", "مصر الجديدة للإسكان": "HELI.CA",
@@ -187,7 +187,6 @@ with tab2:
                     vol_today = float(row['Volume'])
                     vol_ma10 = float(row['Vol_MA10'])
                     
-                    # الفلتر الحامي الأكبر: حجب الأسهم الراكدة والميتة ذات التداولات الضعيفة جداً أقل من 50 ألف سهم
                     if vol_today < 50000:
                         continue
                         
@@ -203,13 +202,12 @@ with tab2:
                     if u > l: momentum_score += ((u - p) / (u - l)) * 10
                     if vol_today > vol_ma10: momentum_score += 10
                     
-                    # فلترة التضخم الحاد لحماية رأس المال من قمم التصريف
                     if m > 85 or r > 78:
-                        status = "🚨 تصريف / خروج (تضخم خطير)"
+                        status = "🚨 تصريف / خروج (تضخم)"
                     elif momentum_score >= 70:
-                        status = "🟢 إيجابي قوي"
+                        status = "⚡ STRONG BUY (شراء قوي)"
                     elif 50 <= momentum_score < 70:
-                        status = "🟢 إيجابي متوسط"
+                        status = "🟢 إيجابي (متوسط)"
                     else:
                         status = "🟡 HOLD (مراقبة)"
                     
@@ -225,25 +223,22 @@ with tab2:
                         "التقييم الفني": status
                     }
                     
-                    # 1. جدول التقاطعات الطازة (آمن تماماً RSI < 52 وفوليوم قوي)
                     if is_new_cross and r < 52:
                         data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد طازة)"
                         fresh_cross_results.append(data_entry)
                         send_telegram_alert(f"🌟 *قناص الفرص لقط تقاطع ذهبي هادئ وآمن!* 🌟\nالسهم: {name} ({ticker})\nالسعر: {p:.2f} ج.م\nRSI: {r:.1f}\nفوليوم اليوم: {vol_today:,.0f}\nالوضع: السهم بيبدأ صعود حقيقي بدون تضخم وبدعم سيولة حية.")
                     
-                    # 2. جدول تصيد القيعان (رخيص جداً للمراقبة الصامتة)
                     elif r < 35 and m < 35:
                         data_entry["التقييم الفني"] = "🛒 قاع تجميع (فرصة مراقبة صامتة)"
                         bottom_accumulation_results.append(data_entry)
                     
-                    # 3. فرز وتقسيم الأسهم الصاعدة
                     elif e9 > e21:
-                        # مضاربة يومية سريعة: فوليوم أعلى من المتوسط بـ 15% وعزم قوي دون تخطي سقف الأمان للـ RSI
                         if vol_today > (vol_ma10 * 1.15) and 50 <= r <= 78:
-                            data_entry["التقييم الفني"] = "⚡ مضاربة سريعة (فوليوم وزخم لحظي)"
+                            # نحتفظ بالتقييم التفصيلي مع إضافة دلالة الجدول
+                            data_entry["التقييم الفني"] = f"{status} [مضاربة لحظية]"
                             short_term_trading.append(data_entry)
                         else:
-                            data_entry["التقييم الفني"] = "📈 اتجاه صاعد مستقر (طويل الأجل)"
+                            data_entry["التقييم الفني"] = f"{status} [استثمار مستقر]"
                             long_term_investment.append(data_entry)
                 except:
                     continue
