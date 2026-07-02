@@ -61,15 +61,19 @@ def calculate_indicators(df):
 # ----------------------------------------------------
 # داخل حلقة الـ for الخاصة بالأسهم في الـ tab2:
                     
+                   # هذه هي المسافات الصحيحة، تأكد من مطابقتها في ملفك
                     fair_val = calculate_fair_value(name)
+                    
                     data_entry = {
                         "النقاط الفنية": round(momentum_score, 1),
                         "اسم الشركة": name,
                         "السعر الحالي": round(p, 2),
                         "القيمة العادلة": fair_val if fair_val else "غير متاحة",
                         "حالة السعر": "لقطة (أرخص)" if (fair_val and p < fair_val) else "مبالغ فيه/عادل",
-                        # ... باقي الحقول
+                        "EMA9": round(ema9, 2),
+                        "EMA21": round(ema21, 2)
                     }
+                    results.append(data_entry)
 # ----------------------------------------------------
 
 # (باقي الكود يظل كما هو مع عرض الجداول)
