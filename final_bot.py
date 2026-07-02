@@ -4,10 +4,10 @@ import pandas as pd
 import plotly.graph_objects as go
 
 # إعدادات الصفحة والمظهر العام
-st.set_page_config(page_title="محلل البورصة المصرية الشامل 🇪🇬📈", layout="wide")
+st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
-st.title("🚀 نظام الفحص الفني الذكي مع ترتيب أولوية البيع والشراء")
-st.write("مرحباً بك! يقوم النظام الآن بفرز وترتيب الأسهم تلقائياً بناءً على قوة وجودة الإشارة الفنية لتبدأ بالأهم.")
+st.title("🏆 نظام المسح الفني الاحترافي المرتب حسب مقياس الزخم والعزم")
+st.write("تم تحديث خوارزمية الترتيب لتتوافق مع إستراتيجيات التداول المحترفة: المفاضلة هنا بناءً على قوة الاتجاه، ومساحة الصعود المتاحة، والمنطقة الذهبية لمؤشر RSI.")
 
 # القائمة الكاملة لرموز أسهم السوق المصري (EGX) على Yahoo Finance
 ALL_EGX_STOCKS = {
@@ -35,7 +35,7 @@ ALL_EGX_STOCKS = {
 
 ALL_EGX_STOCKS = dict(sorted(ALL_EGX_STOCKS.items()))
 
-tab1, tab2 = st.tabs(["🔍 فحص سهم تفصيلي + رسم بياني", "📊 مسح السوق وترتيب الأولوية 🏆"])
+tab1, tab2 = st.tabs(["🔍 فحص سهم تفصيلي + رسم بياني", "🏆 مسح وترتيب السوق الاحترافي"])
 
 # --- التبويب الأول: فحص سهم تفصيلي ---
 with tab1:
@@ -101,17 +101,17 @@ with tab1:
             except Exception as e:
                 st.error(f"حدث خطأ: {e}")
 
-# --- التبويب الثاني: مسح كامل السوق وترتيب الأولوية ---
+# --- التبويب الثاني: مسح وترتيب السوق الاحترافي ---
 with tab2:
-    st.subheader("🏆 ترتيب وفلترة السوق المصري حسب قوة وإشارات الأولوية فورا")
-    st.write("سيقوم النظام بفحص جميع الشركات وترتيبها تنازلياً (الأسهم الأفضل للشراء أولاً ثم الانتظار ثم البيع):")
+    st.subheader("📊 ترتيب فرز المحترفين: الأسهم المرتبة بناءً على نقاط الزخم الفني الأقوى")
+    st.write("كلما زادت قيمة السهم الرقمية، كلما دل ذلك على اتجاه صاعد قوي ومساحة صعود واسعة آمنة بدون تضخم:")
     
-    if st.button("ابدأ مسح السوق وترتيب الأولويات الآن 🚀"):
+    if st.button("تشغيل الفرز والترتيب الاحترافي اللحظي 🚀"):
         scan_results = []
         progress_bar = st.progress(0)
         total_stocks = len(ALL_EGX_STOCKS)
         
-        with st.spinner("جاري جمع بيانات المقصورة اللحظية وحساب رتبة كل سهم..."):
+        with st.spinner("جاري فحص وحساب نقاط العزم والقوة الفنية لكل سهم..."):
             tickers_list = list(ALL_EGX_STOCKS.values())
             all_data = yf.download(tickers_list, period="50d", progress=False, group_by='ticker')
             
@@ -135,6 +135,7 @@ with tab2:
                     stock_df['MA20'] = stock_df['Close'].rolling(window=20).mean()
                     stock_df['STD20'] = stock_df['Close'].rolling(window=20).std()
                     stock_df['Upper_Band'] = stock_df['MA20'] + (2 * stock_df['STD20'])
+                    stock_df['Lower_Band'] = stock_df['MA20'] - (2 * stock_df['STD20'])
                     
                     row = stock_df.iloc[-1]
                     p = float(row['Close'])
@@ -142,39 +143,60 @@ with tab2:
                     e21 = float(row['EMA21'])
                     r = float(row['RSI_14'])
                     u = float(row['Upper_Band'])
+                    l = float(row['Lower_Band'])
                     
-                    # نظام حساب رتبة الأولوية الرقمية (Priority Code) لترتيب الجدول تلقائياً
-                    if e9 > e21 and r < 55 and p < u:
-                        status = "🟢 أولوية شراء فائقة (الدرجة الأولى)"
-                        priority_score = 1  # أعلى أولوية شراء
-                    elif e9 > e21 and r < 70 and p < u:
-                        status = "🟢 شراء عادي (الدرجة الثانية)"
-                        priority_score = 2
-                    elif p < u and r < 70:
-                        status = "🟡HOLD (احتفاظ ومراقبة)"
-                        priority_score = 3
-                    elif p >= u and r >= 75:
-                        status = "🔴 أولوية بيع قصوى (خروج فوراً)"
-                        priority_score = 4  # إشارة بيع قوية جداً لتضخم المؤشرات
+                    # --- بناء سكور التداول الاحترافي (Momentum Score) ---
+                    momentum_score = 0
+                    
+                    # 1. شرط الاتجاه (Trend): لو السريع فوق البطيء بياخد نقط دعم قوية
+                    if e9 > e21:
+                        momentum_score += 40
+                        # إضافة نقاط إضافية بناء على قوة التباعد الإيجابي
+                        momentum_score += min(((e9 - e21) / e21) * 100, 10)
+                    
+                    # 2. شرط الـ RSI الذهبي (بين 45 و 60 هي أفضل منطقة انطلاق)
+                    if 45 <= r <= 60:
+                        momentum_score += 30
+                    elif 30 <= r < 45:
+                        momentum_score += 15 # آمن ولكنه لسه مجمعش عزم كافي
+                    elif 60 < r < 70:
+                        momentum_score += 10 # العزم قوي بس دخل في ريسك التضخم
                     else:
-                        status = "🔴 إشارة بيع/جني أرباح"
-                        priority_score = 5
+                        momentum_score -= 20 # هبوط قوي أو تضخم خطر
+                        
+                    # 3. مساحة الصعود داخل البولينجر (النسبة المئوية لموقع السعر داخل القناة)
+                    # لو السعر قريب من القاع وله مساحة صعود كبيرة للقمة ياخذ نقاط أعلى
+                    if u > l:
+                        position_in_band = (u - p) / (u - l)
+                        momentum_score += position_in_band * 20
                     
+                    # تحديد الحالة اللفظية بناء على السكور الإجمالي الشامل
+                    if momentum_score >= 70:
+                        status = "🟢 شراء قوي جداً (فرصة ذهبية)"
+                    elif 50 <= momentum_score < 70:
+                        status = "🟢 شراء مضاربي (عزم صاعد)"
+                    elif 30 <= momentum_score < 50:
+                        status = "🟡 HOLD (احتفاظ / حيادي)"
+                    elif 10 <= momentum_score < 30:
+                        status = "🔴 بيع / تخفيف كميات"
+                    else:
+                        status = "🔴 خروج فوري (قرب القمة/كسر اتجاه)"
+                        
                     scan_results.append({
-                        "الترتيب الفني": priority_score,
+                        "النقاط الفنية (من 100)": round(momentum_score, 1),
                         "اسم الشركة": name,
                         "الرمز البرمجي": ticker,
                         "السعر الحالي (ج.م)": round(p, 2),
                         "مؤشر RSI": round(r, 1),
-                        "الحالة الفنية والأولوية": status
+                        "التقييم الفني المدمج": status
                     })
                 except:
                     continue
             
             if scan_results:
                 result_df = pd.DataFrame(scan_results)
-                # ترتيب الجدول بناءً على عمود الترتيب الفني تصاعدياً (من أولوية 1 إلى 5)
-                result_df = result_df.sort_values(by="الترتيب الفني").drop(columns=["الترتيب الفني"])
+                # ترتيب الجدول تنازلياً من أعلى سكور (100) لأقل سكور لترى الفرص النادرة فوراً
+                result_df = result_df.sort_values(by="النقاط الفنية (من 100)", ascending=False)
                 
-                st.success("تم الانتهاء وإعادة ترتيب قمة وقاع السوق بنجاح!")
+                st.success("تم الترتيب الفني الاحترافي بنجاح! الأسهم في الأعلى هي الأفضل توافقاً مع شروط الانفجار السعري الآمن.")
                 st.dataframe(result_df, use_container_width=True)
