@@ -8,8 +8,8 @@ import numpy as np
 # إعدادات الصفحة والمظهر العام
 st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
-st.title("🏆 نظام المسح الفني الاحترافي المطور (السعر + السيولة الذكية)")
-st.write("تم دمج مؤشر السيولة الذكية (MFI) إلى جانب RSI والبولينجر والمتوسطات المتحركة لفرز السوق بناءً على حركة أموال الحيتان والتنبيه الفوري.")
+st.title("🏆 نظام المسح الفني الاحترافي المطور (قناص التقاطعات والسيولة)")
+st.write("تمت ترقية النظام ليرصد لك الأسهم في لحظة 'التقاطع الذهبي الناشئ' لتأسيس المراكز مبكراً، إلى جانب تتبع سيولة الحيتان.")
 
 # --- القراءة التلقائية الآمنة من Streamlit Secrets ---
 default_token = st.secrets.get("TELEGRAM_TOKEN", "")
@@ -57,11 +57,9 @@ ALL_EGX_STOCKS = {
 ALL_EGX_STOCKS = dict(sorted(ALL_EGX_STOCKS.items()))
 
 def calculate_indicators(df):
-    """دالة موحدة لحساب كافة المؤشرات بما فيها MFI"""
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(-1)
         
-    # المتوسطات والـ RSI
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
     delta = df['Close'].diff()
@@ -69,30 +67,25 @@ def calculate_indicators(df):
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI_14'] = 100 - (100 / (1 + (gain / loss + 0.00001)))
     
-    # البولينجر
     df['MA20'] = df['Close'].rolling(window=20).mean()
     df['STD20'] = df['Close'].rolling(window=20).std()
     df['Upper_Band'] = df['MA20'] + (2 * df['STD20'])
     df['Lower_Band'] = df['MA20'] - (2 * df['STD20'])
     
-    # --- حساب مؤشر السيولة الذكية MFI (Money Flow Index) ---
     typical_price = (df['High'] + df['Low'] + df['Close']) / 3
     raw_money_flow = typical_price * df['Volume']
-    
     typical_price_diff = typical_price.diff()
     pos_flow = pd.Series(np.where(typical_price_diff > 0, raw_money_flow, 0), index=df.index)
     neg_flow = pd.Series(np.where(typical_price_diff < 0, raw_money_flow, 0), index=df.index)
     
     pos_mf14 = pos_flow.rolling(window=14).sum()
     neg_mf14 = neg_flow.rolling(window=14).sum()
-    
-    money_ratio = pos_mf14 / (neg_mf14 + 0.00001)
-    df['MFI_14'] = 100 - (100 / (1 + money_ratio))
+    df['MFI_14'] = 100 - (100 / (1 + (pos_mf14 / (neg_mf14 + 0.00001))))
     return df
 
 tab1, tab2 = st.tabs(["🔍 فحص سهم تفصيلي + رسم بياني", "🏆 مسح وترتيب السوق الاحترافي"])
 
-# --- التبويب الأول: فحص سهم تفصيلي ---
+# --- التبويب الأول ---
 with tab1:
     st.subheader("اختر سهمك المفضل لتحليله ورسم بياناته بالتفصيل")
     col_input1, col_input2 = st.columns([2, 1])
@@ -105,29 +98,33 @@ with tab1:
             ticker_input = manual_ticker
 
     if st.button("تحليل السهم ورسم المنحنى ⚡"):
-        with st.spinner("جاري جلب البيانات وحساب المؤشرات الفنية..."):
+        with st.spinner("جاري جلب البيانات..."):
             try:
                 df = yf.download(ticker_input, period="100d", progress=False, group_by='ticker')
                 if not df.empty:
                     df = calculate_indicators(df)
-                    
                     last_row = df.iloc[-1]
-                    price = float(last_row['Close'].iloc[0]) if isinstance(last_row['Close'], pd.Series) else float(last_row['Close'])
-                    ema9 = float(last_row['EMA9'].iloc[0]) if isinstance(last_row['EMA9'], pd.Series) else float(last_row['EMA9'])
-                    ema21 = float(last_row['EMA21'].iloc[0]) if isinstance(last_row['EMA21'], pd.Series) else float(last_row['EMA21'])
-                    rsi = float(last_row['RSI_14'].iloc[0]) if isinstance(last_row['RSI_14'], pd.Series) else float(last_row['RSI_14'])
-                    mfi = float(last_row['MFI_14'].iloc[0]) if isinstance(last_row['MFI_14'], pd.Series) else float(last_row['MFI_14'])
-                    upper = float(last_row['Upper_Band'].iloc[0]) if isinstance(last_row['Upper_Band'], pd.Series) else float(last_row['Upper_Band'])
+                    prev_row = df.iloc[-3] # لمراقبة الوضع قبل يومين
                     
-                    # شرط القرار المطور بالاعتماد على تدفق السيولة والسعر معاً
-                    if ema9 > ema21 and rsi < 70 and mfi < 80:
-                        decision = "STRONG BUY ⚡ (اتجاه صاعد وسيولة ممتازة)"
+                    price = float(last_row['Close'].squeeze())
+                    ema9 = float(last_row['EMA9'].squeeze())
+                    ema21 = float(last_row['EMA21'].squeeze())
+                    rsi = float(last_row['RSI_14'].squeeze())
+                    mfi = float(last_row['MFI_14'].squeeze())
+                    upper = float(last_row['Upper_Band'].squeeze())
+                    
+                    # فحص هل التقاطع جديد (خلال آخر يومين كان EMA9 تحت EMA21 والآن فوقه)
+                    is_new_cross = (prev_row['EMA9'] <= prev_row['EMA21']) and (ema9 > ema21)
+                    
+                    if is_new_cross and rsi < 60:
+                        decision = "🚀 تأسيس مركز (بداية تقاطع ذهبي واعد جداً)"
+                        color = "#1abc9c"
+                    elif ema9 > ema21 and rsi < 70 and mfi < 80:
+                        decision = "STRONG BUY ⚡ (اتجاه صاعد مستمر)"
                         color = "#2ecc71"
                     elif price >= upper or rsi >= 70 or mfi >= 80:
-                        decision = "SELL / TAKE PROFIT 🚨 (تضخم سعري أو سيولة ذروة)"
+                        decision = "SELL / TAKE PROFIT 🚨"
                         color = "#e74c3c"
-                        alert_msg = f"⚠️ *تنبيه تضخم السيولة والسعر يدوياً*\nالسهم: {selected_stock} ({ticker_input})\nالسعر: {price:.2f} ج.م\nRSI: {rsi:.1f} | مؤشر السيولة MFI: {mfi:.1f}\nالسيولة في أعلى ذروتها التضخمية! ينصح بجني أرباح."
-                        send_telegram_alert(alert_msg)
                     else:
                         decision = "HOLD ✋ (مراقبة)"
                         color = "#f39c12"
@@ -138,7 +135,7 @@ with tab1:
                     c1.metric("السعر الحالي", f"{price:.2f} ج.م")
                     c2.metric("مؤشر الزخم RSI", f"{rsi:.1f}")
                     c3.metric("مؤشر السيولة MFI", f"{mfi:.1f}")
-                    c4.metric("حالة الاتجاه", "صاعد 🟢" if ema9 > ema21 else "هابط 🔴")
+                    c4.metric("نوع الإشارة", "تقاطع حديث النشوء ✨" if is_new_cross else "موجة مستمرة 🌊")
                     
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=df.index, y=df['Close'].squeeze(), name='سعر الإغلاق', line=dict(color='#1f77b4', width=2)))
@@ -149,7 +146,7 @@ with tab1:
             except Exception as e:
                 st.error(f"حدث خطأ: {e}")
 
-# --- التبويب الثاني: مسح وترتيب السوق الاحترافي ---
+# --- التبويب الثاني ---
 with tab2:
     st.subheader("📊 ترتيب فرز المحترفين المطور: بناءً على نقاط الزخم ودخول السيولة الذكية")
     
@@ -158,24 +155,21 @@ with tab2:
         progress_bar = st.progress(0)
         total_stocks = len(ALL_EGX_STOCKS)
         
-        with st.spinner("جاري مسح السوق وحساب تدفقات أموال الحيتان الحالية..."):
+        with st.spinner("جاري مسح التقاطعات الحديثة وتدفق أموال الحيتان..."):
             tickers_list = list(ALL_EGX_STOCKS.values())
             all_data = yf.download(tickers_list, period="60d", progress=False, group_by='ticker')
             
             for idx, (name, ticker) in enumerate(ALL_EGX_STOCKS.items()):
                 progress_bar.progress((idx + 1) / total_stocks)
                 try:
-                    if len(tickers_list) > 1:
-                        stock_df = all_data[ticker].dropna(how='all')
-                    else:
-                        stock_df = all_data
-                        
+                    stock_df = all_data[ticker].dropna(how='all') if len(tickers_list) > 1 else all_data
                     if stock_df.empty or len(stock_df) < 25:
                         continue
                         
                     stock_df = calculate_indicators(stock_df)
-                    
                     row = stock_df.iloc[-1]
+                    prev_row = stock_df.iloc[-4] # فحص رجوعاً للخلف لـ 3 أيام
+                    
                     p = float(row['Close'])
                     e9 = float(row['EMA9'])
                     e21 = float(row['EMA21'])
@@ -184,44 +178,41 @@ with tab2:
                     u = float(row['Upper_Band'])
                     l = float(row['Lower_Band'])
                     
-                    # --- خوارزمية التقييم الرقمي المطورة من 100 ---
+                    is_new_cross = (prev_row['EMA9'] <= prev_row['EMA21']) and (e9 > e21)
+                    
                     momentum_score = 0
+                    # 1. الاتجاه والتقاطع (وزن 40 نقطة)
+                    if is_new_cross:
+                        momentum_score += 40 # مكافأة ضخمة لأنه تقاطع طازج وآمن
+                    elif e9 > e21:
+                        momentum_score += 30
                     
-                    # 1. الاتجاه الفني (وزن 35 نقطة)
-                    if e9 > e21:
-                        momentum_score += 35
-                    
-                    # 2. قوة السيولة الذكية MFI (وزن 35 نقطة)
-                    if 50 <= m <= 70:
-                        momentum_score += 35  # تجميع شرائي قوي وصحي
-                    elif 35 <= m < 50:
-                        momentum_score += 20  # تجميع هادئ
-                    elif m > 85:
-                        momentum_score -= 25  # خروج سيولة وتضخم مرعب
+                    # 2. قوة السيولة MFI (وزن 30 نقطة)
+                    if 50 <= m <= 70: momentum_score += 30
+                    elif 35 <= m < 50: momentum_score += 20
+                    elif m > 85: momentum_score -= 25
                         
-                    # 3. القوة النسبية للسعر RSI (وزن 20 نقطة)
-                    if 45 <= r <= 65:
-                        momentum_score += 20
-                    elif r > 75:
-                        momentum_score -= 20
+                    # 3. القوة النسبية RSI (وزن 20 نقطة)
+                    if 45 <= r <= 65: momentum_score += 20
+                    elif r > 75: momentum_score -= 20
                         
-                    # 4. مساحة الحركة داخل البولينجر (وزن 10 نقاط)
-                    if u > l:
-                        momentum_score += ((u - p) / (u - l)) * 10
+                    # 4. البولينجر (وزن 10 نقاط)
+                    if u > l: momentum_score += ((u - p) / (u - l)) * 10
                     
-                    # الحالات والتنبيهات التلقائية المعتمدة على السيولة والسعر
-                    if momentum_score >= 70:
-                        status = "🟢 شراء قوي جداً (تجميع الحيتان)"
+                    # تحديد الحالة اللفظية والإشعارات التلقائية
+                    if is_new_cross and r < 60:
+                        status = "✨ تأسيس مركز (بداية تقاطع ذهبي)"
+                        send_telegram_alert(f"🌟 *قناص الفرص لقط تقاطع ذهبي جديد!* 🌟\nالسهم: {name} ({ticker})\nالسعر الحالي: {p:.2f} ج.م\nالوضع: السهم لسه طالع من النوم والخط الأخضر قطع الأحمر صعوداً! فرصة تأسيس ممتازة.")
+                    elif momentum_score >= 70:
+                        status = "🟢 شراء قوي (تجميع الحيتان مستمر)"
                     elif 50 <= momentum_score < 70:
-                        status = "🟢 شراء مضاربي (تدفق سيولة)"
+                        status = "🟢 شراء مضاربي (ركوب الموجة)"
                     elif 30 <= momentum_score < 50:
-                        status = "🟡 HOLD (مراقبة حركة السيولة)"
+                        status = "🟡 HOLD (مراقبة)"
                     elif 10 <= momentum_score < 30:
-                        status = "🔴 بيع وتخفيف (تصريف خفي)"
-                        send_telegram_alert(f"🚨 *تنبيه تصريف وخروج سيولة* 🚨\nالسهم: {name} ({ticker})\nالسعر: {p:.2f} ج.م\nالسيولة MFI: {m:.1f}\nالوضع: الحيتان تبدأ بالتصريف والسيولة تخرج!")
+                        status = "🔴 بيع وتخفيف (تصريف)"
                     else:
-                        status = "🔴 خروج فوري (انفجار فقاعة التضخم)"
-                        send_telegram_alert(f"🔥 *إشارة قمة تاريخية وخروج عاجل* 🔥\nالسهم: {name} ({ticker})\nالسعر: {p:.2f} ج.م\nMFI: {m:.1f} | RSI: {r:.1f}\nالوضع: تضخم شرائي متكامل وسقوط حتمي للسعر!")
+                        status = "🔴 خروج فوري (تضخم حاد)"
                         
                     scan_results.append({
                         "النقاط الفنية والسيولة (من 100)": round(momentum_score, 1),
@@ -236,8 +227,6 @@ with tab2:
                     continue
             
             if scan_results:
-                result_df = pd.DataFrame(scan_results)
-                result_df = result_df.sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
-                
-                st.success("تم المسح الشامل وترتيب السوق بناءً على السعر والسيولة بنجاح! 🦅")
+                result_df = pd.DataFrame(scan_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
+                st.success("تم التحديث! السيستم الآن يبحث عن 'بداية الانطلاق' بجانب الأسهم المستمرة.")
                 st.dataframe(result_df, use_container_width=True)
