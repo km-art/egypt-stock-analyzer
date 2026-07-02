@@ -8,8 +8,8 @@ import numpy as np
 # إعدادات الصفحة والمظهر العام
 st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
-st.title("🏆 نظام المسح الفني الاحترافي المطور (قناص التقاطعات والسيولة)")
-st.write("تمت ترقية النظام ليرصد لك الأسهم في لحظة 'التقاطع الذهبي الناشئ' لتأسيس المراكز مبكراً، إلى جانب تتبع سيولة الحيتان.")
+st.title("🦅 قناص البورصة المصرية (فصل التقاطعات الحديثة + تدفق السيولة)")
+st.write("تم ترقية النظام ليفصل لك 'الفرص الطازة الحالية' في جدول مستقل علوي، مع الحفاظ على ترتيب السوق العام بناءً على سيولة الحيتان.")
 
 # --- القراءة التلقائية الآمنة من Streamlit Secrets ---
 default_token = st.secrets.get("TELEGRAM_TOKEN", "")
@@ -104,7 +104,7 @@ with tab1:
                 if not df.empty:
                     df = calculate_indicators(df)
                     last_row = df.iloc[-1]
-                    prev_row = df.iloc[-3] # لمراقبة الوضع قبل يومين
+                    prev_row = df.iloc[-3]
                     
                     price = float(last_row['Close'].squeeze())
                     ema9 = float(last_row['EMA9'].squeeze())
@@ -113,7 +113,6 @@ with tab1:
                     mfi = float(last_row['MFI_14'].squeeze())
                     upper = float(last_row['Upper_Band'].squeeze())
                     
-                    # فحص هل التقاطع جديد (خلال آخر يومين كان EMA9 تحت EMA21 والآن فوقه)
                     is_new_cross = (prev_row['EMA9'] <= prev_row['EMA21']) and (ema9 > ema21)
                     
                     if is_new_cross and rsi < 60:
@@ -148,14 +147,15 @@ with tab1:
 
 # --- التبويب الثاني ---
 with tab2:
-    st.subheader("📊 ترتيب فرز المحترفين المطور: بناءً على نقاط الزخم ودخول السيولة الذكية")
+    st.subheader("📊 الفرز والترتيب المتقدم للسوق المصري")
     
     if st.button("تشغيل الفرز والترتيب الاحترافي اللحظي 🚀"):
-        scan_results = []
+        fresh_cross_results = []
+        general_market_results = []
         progress_bar = st.progress(0)
         total_stocks = len(ALL_EGX_STOCKS)
         
-        with st.spinner("جاري مسح التقاطعات الحديثة وتدفق أموال الحيتان..."):
+        with st.spinner("جاري فحص التقاطعات ورصد تدفق سيولة الحيتان..."):
             tickers_list = list(ALL_EGX_STOCKS.values())
             all_data = yf.download(tickers_list, period="60d", progress=False, group_by='ticker')
             
@@ -168,7 +168,7 @@ with tab2:
                         
                     stock_df = calculate_indicators(stock_df)
                     row = stock_df.iloc[-1]
-                    prev_row = stock_df.iloc[-4] # فحص رجوعاً للخلف لـ 3 أيام
+                    prev_row = stock_df.iloc[-4] # فحص حركة آخر 3 أيام للتقاطعات
                     
                     p = float(row['Close'])
                     e9 = float(row['EMA9'])
@@ -178,43 +178,28 @@ with tab2:
                     u = float(row['Upper_Band'])
                     l = float(row['Lower_Band'])
                     
+                    # شرط التقاطع الطازج لفرص التأسيس المبكر
                     is_new_cross = (prev_row['EMA9'] <= prev_row['EMA21']) and (e9 > e21)
                     
                     momentum_score = 0
-                    # 1. الاتجاه والتقاطع (وزن 40 نقطة)
-                    if is_new_cross:
-                        momentum_score += 40 # مكافأة ضخمة لأنه تقاطع طازج وآمن
-                    elif e9 > e21:
-                        momentum_score += 30
-                    
-                    # 2. قوة السيولة MFI (وزن 30 نقطة)
+                    if e9 > e21: momentum_score += 40
                     if 50 <= m <= 70: momentum_score += 30
-                    elif 35 <= m < 50: momentum_score += 20
+                    elif 35 <= m < 50: momentum_score += 15
                     elif m > 85: momentum_score -= 25
-                        
-                    # 3. القوة النسبية RSI (وزن 20 نقطة)
                     if 45 <= r <= 65: momentum_score += 20
                     elif r > 75: momentum_score -= 20
-                        
-                    # 4. البولينجر (وزن 10 نقاط)
                     if u > l: momentum_score += ((u - p) / (u - l)) * 10
                     
-                    # تحديد الحالة اللفظية والإشعارات التلقائية
-                    if is_new_cross and r < 60:
-                        status = "✨ تأسيس مركز (بداية تقاطع ذهبي)"
-                        send_telegram_alert(f"🌟 *قناص الفرص لقط تقاطع ذهبي جديد!* 🌟\nالسهم: {name} ({ticker})\nالسعر الحالي: {p:.2f} ج.م\nالوضع: السهم لسه طالع من النوم والخط الأخضر قطع الأحمر صعوداً! فرصة تأسيس ممتازة.")
+                    if m > 85 or r > 75:
+                        status = "🔴 خروج فوري (تضخم حاد)"
                     elif momentum_score >= 70:
-                        status = "🟢 شراء قوي (تجميع الحيتان مستمر)"
+                        status = "🟢 شراء قوي (تجمع سيولة مستمر)"
                     elif 50 <= momentum_score < 70:
                         status = "🟢 شراء مضاربي (ركوب الموجة)"
-                    elif 30 <= momentum_score < 50:
-                        status = "🟡 HOLD (مراقبة)"
-                    elif 10 <= momentum_score < 30:
-                        status = "🔴 بيع وتخفيف (تصريف)"
                     else:
-                        status = "🔴 خروج فوري (تضخم حاد)"
-                        
-                    scan_results.append({
+                        status = "🟡 HOLD (مراقبة)"
+                    
+                    data_entry = {
                         "النقاط الفنية والسيولة (من 100)": round(momentum_score, 1),
                         "اسم الشركة": name,
                         "الرمز البرمجي": ticker,
@@ -222,11 +207,32 @@ with tab2:
                         "مؤشر الزخم RSI": round(r, 1),
                         "مؤشر السيولة MFI": round(m, 1),
                         "التقييم الفني المدمج": status
-                    })
+                    }
+                    
+                    # الفرز الذكي والتوزيع في الجداول منفصلة
+                    if is_new_cross and r < 63:
+                        data_entry["التقييم الفني المدمج"] = "✨ تأسيس مركز (تقاطع ذهبي حديث)"
+                        fresh_cross_results.append(data_entry)
+                        send_telegram_alert(f"🌟 *قناص الفرص لقط تقاطع ذهبي طازة!* 🌟\nالسهم: {name} ({ticker})\nالسعر: {p:.2f} ج.م\nMFI: {m:.1f}\nالوضع: السهم بيبدأ موجة صعود جديدة حالا! فرصة تأسيس مثالية.")
+                    else:
+                        general_market_results.append(data_entry)
                 except:
                     continue
             
-            if scan_results:
-                result_df = pd.DataFrame(scan_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
-                st.success("تم التحديث! السيستم الآن يبحث عن 'بداية الانطلاق' بجانب الأسهم المستمرة.")
-                st.dataframe(result_df, use_container_width=True)
+            st.success("تم الانتهاء من المسح والفرز بنجاح! 🦅")
+            
+            # 1. عرض جدول فرص التأسيس الطازة أولاً في الأعلى
+            st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (التقاطعات الطازة)")
+            if fresh_cross_results:
+                fresh_df = pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
+                st.dataframe(fresh_df, use_container_width=True)
+            else:
+                st.info("لا توجد أسهم لقطت بداية تقاطع ذهبي جديد اليوم. تابع جدول فرز السوق العام بالأسفل.")
+                
+            st.write("---")
+            
+            # 2. عرض جدول فرز السوق العام تحت
+            st.markdown("### 📊 ثانياً: جدول فرز وترتيب السوق العام (حسب قوة الزخم والسيولة المستمرة)")
+            if general_market_results:
+                general_df = pd.DataFrame(general_market_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
+                st.dataframe(general_df, use_container_width=True)
