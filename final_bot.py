@@ -246,34 +246,34 @@ with tab2:
             
             st.success("تم التحديث النهائي والإغلاق الهندسي للرادار بنجاح! 🦅")
             
-            # --- آلية الإرسال الجديدة والملخصة تماماً للتليجرام ---
+            # --- آلية الإرسال المعدلة لـ 5 فرص ---
             telegram_msg = "🦅 *تقرير قناص البورصة المصرية اللحظي* 🇪🇬\n\n"
             
             if fresh_cross_results:
                 telegram_msg += "🌟 *أسهم تأسيس المركز (قاع صاعد):*\n"
-                for item in fresh_cross_results[:2]:
+                for item in fresh_cross_results[:5]: # تم التعديل لـ 5
                     telegram_msg += f"- {item['اسم الشركة']} ({item['السعر الحالي (ج.م)']} ج.م)\n"
                 telegram_msg += "\n"
                 
             if long_term_investment:
-                # ترتيب واختيار أعلى سهمين استثمار قوي من 100
-                top_inv = pd.DataFrame(long_term_investment).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False).head(2)
+                # ترتيب واختيار أعلى 5 أسهم استثمار
+                top_inv = pd.DataFrame(long_term_investment).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False).head(5) # تم التعديل لـ 5
                 telegram_msg += "📈 *أقوى أسهم الاتجاه الصاعد المستقر:*\n"
                 for _, row_inv in top_inv.iterrows():
                     telegram_msg += f"- {row_inv['اسم الشركة']} | السعر: {row_inv['السعر الحالي (ج.م)']} ج.م | النقاط: {row_inv['النقاط الفنية والسيولة (من 100)']}\n"
                 telegram_msg += "\n"
                 
             if short_term_trading:
-                # ترتيب واختيار أعلى سهمين مضاربة من حيث الفوليوم
-                top_trade = pd.DataFrame(short_term_trading).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False).head(2)
+                # ترتيب واختيار أعلى 5 أسهم مضاربة
+                top_trade = pd.DataFrame(short_term_trading).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False).head(5) # تم التعديل لـ 5
                 telegram_msg += "⚡ *أقوى أسهم المضاربة اللحظية وعزم السيولة:*\n"
                 for _, row_tr in top_trade.iterrows():
                     telegram_msg += f"- {row_tr['اسم الشركة']} | السعر: {row_tr['السعر الحالي (ج.م)']} ج.م\n"
             
-            # إرسال الرسالة الكاملة والملخصة مرة واحدة فقط لمنع الحظر
+            # إرسال الرسالة الكاملة والملخصة مرة واحدة فقط
             send_telegram_alert(telegram_msg)
             
-            # عرض الجداول على الشاشة للمستخدم كالمعتاد
+            # عرض الجداول على الشاشة
             st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
             if fresh_cross_results:
                 st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False), use_container_width=True)
