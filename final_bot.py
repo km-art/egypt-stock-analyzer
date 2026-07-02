@@ -8,8 +8,8 @@ import numpy as np
 # إعدادات الصفحة والمظهر العام
 st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
-st.title("🦅 قناص البورصة المصرية المطوّر (فصل المضاربة عن الاستثمار طويل الأجل)")
-st.write("تم تعديل شروط الـ RSI بدقة، وفصل أسهم المضاربة اللحظية عن أسهم الاتجاه طويل الأجل لراحة تامة في اتخاذ القرار.")
+st.title("🦅 قناص البورصة المصرية (النسخة المتكاملة المقفلة ضد المخاطر)")
+st.write("تم تقفيل الكود بمعايير صارمة: إضافة حد أدنى للفوليوم لحجب الأسهم الميتة، وفلاتر حماية من التضخم الحاد.")
 
 # --- القراءة التلقائية الآمنة من Streamlit Secrets ---
 default_token = st.secrets.get("TELEGRAM_TOKEN", "")
@@ -117,7 +117,6 @@ with tab1:
                     
                     is_new_cross = (prev_row['EMA9'] <= prev_row['EMA21']) and (ema9 > ema21)
                     
-                    # شرط التقاطع الطازج الآمن الجديد
                     if is_new_cross and rsi < 52:
                         decision = "🚀 تأسيس مركز (بداية تقاطع ذهبي حقيقي من القاع)"
                         color = "#1abc9c"
@@ -127,8 +126,8 @@ with tab1:
                     elif ema9 > ema21 and rsi < 70 and mfi < 80:
                         decision = "STRONG BUY ⚡ (اتجاه صاعد مستمر)"
                         color = "#2ecc71"
-                    elif price >= upper or rsi >= 70 or mfi >= 80:
-                        decision = "SELL / TAKE PROFIT 🚨"
+                    elif price >= upper or rsi >= 75 or mfi >= 85:
+                        decision = "SELL / TAKE PROFIT 🚨 (تضخم مؤشرات حاد)"
                         color = "#e74c3c"
                     else:
                         decision = "HOLD ✋ (مراقبة)"
@@ -188,6 +187,10 @@ with tab2:
                     vol_today = float(row['Volume'])
                     vol_ma10 = float(row['Vol_MA10'])
                     
+                    # الفلتر الحامي الأكبر: حجب الأسهم الراكدة والميتة ذات التداولات الضعيفة جداً أقل من 50 ألف سهم
+                    if vol_today < 50000:
+                        continue
+                        
                     is_new_cross = (prev_row['EMA9'] <= prev_row['EMA21']) and (e9 > e21)
                     
                     momentum_score = 0
@@ -200,8 +203,9 @@ with tab2:
                     if u > l: momentum_score += ((u - p) / (u - l)) * 10
                     if vol_today > vol_ma10: momentum_score += 10
                     
-                    if m > 85 or r > 75:
-                        status = "🔴 خروج (تضخم حاد)"
+                    # فلترة التضخم الحاد لحماية رأس المال من قمم التصريف
+                    if m > 85 or r > 78:
+                        status = "🚨 تصريف / خروج (تضخم خطير)"
                     elif momentum_score >= 70:
                         status = "🟢 إيجابي قوي"
                     elif 50 <= momentum_score < 70:
@@ -221,21 +225,21 @@ with tab2:
                         "التقييم الفني": status
                     }
                     
-                    # 1. تصفية لجدول التقاطعات الطازة (شرط صارم جداً RSI < 52)
+                    # 1. جدول التقاطعات الطازة (آمن تماماً RSI < 52 وفوليوم قوي)
                     if is_new_cross and r < 52:
                         data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد طازة)"
                         fresh_cross_results.append(data_entry)
-                        send_telegram_alert(f"🌟 *قناص الفرص لقط تقاطع ذهبي هادئ!* 🌟\nالسهم: {name} ({ticker})\nالسعر: {p:.2f} ج.م\nRSI: {r:.1f} (آمن تماماً)\nالوضع: السهم بيبدأ صعود حقيقي ومن القاع وبدون تضخم!")
+                        send_telegram_alert(f"🌟 *قناص الفرص لقط تقاطع ذهبي هادئ وآمن!* 🌟\nالسهم: {name} ({ticker})\nالسعر: {p:.2f} ج.م\nRSI: {r:.1f}\nفوليوم اليوم: {vol_today:,.0f}\nالوضع: السهم بيبدأ صعود حقيقي بدون تضخم وبدعم سيولة حية.")
                     
-                    # 2. تصفية لجدول تصيد القيعان والمراقبة التجميعية
+                    # 2. جدول تصيد القيعان (رخيص جداً للمراقبة الصامتة)
                     elif r < 35 and m < 35:
                         data_entry["التقييم الفني"] = "🛒 قاع تجميع (فرصة مراقبة صامتة)"
                         bottom_accumulation_results.append(data_entry)
                     
-                    # 3. فرز وتقسيم باقي أسهم السوق الصاعدة (مضاربة يومية vs استثمار طويل الأجل)
+                    # 3. فرز وتقسيم الأسهم الصاعدة
                     elif e9 > e21:
-                        # إذا كان الفوليوم اليومي أعلى من المتوسط بـ 15% وعزم الـ RSI قوي = مضاربة يومية سريعة
-                        if vol_today > (vol_ma10 * 1.15) and r >= 50:
+                        # مضاربة يومية سريعة: فوليوم أعلى من المتوسط بـ 15% وعزم قوي دون تخطي سقف الأمان للـ RSI
+                        if vol_today > (vol_ma10 * 1.15) and 50 <= r <= 78:
                             data_entry["التقييم الفني"] = "⚡ مضاربة سريعة (فوليوم وزخم لحظي)"
                             short_term_trading.append(data_entry)
                         else:
@@ -244,13 +248,13 @@ with tab2:
                 except:
                     continue
             
-            st.success("تم التحديث والفرز الاستراتيجي بنجاح! 🦅")
+            st.success("تم التحديث النهائي والإغلاق الهندسي للرادار بنجاح! 🦅")
             
-            st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة تماماً، RSI < 52)")
+            st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
             if fresh_cross_results:
                 st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False), use_container_width=True)
             else:
-                st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم (كل الأسهم المتصاعدة قفزت قفزات سريعة).")
+                st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم واستوفت شروط الفوليوم الحقيقي.")
                 
             st.write("---")
             
@@ -258,15 +262,15 @@ with tab2:
             if bottom_accumulation_results:
                 st.dataframe(pd.DataFrame(bottom_accumulation_results).sort_values(by="مؤشر الزخم RSI", ascending=True), use_container_width=True)
             else:
-                st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي تحت 35.")
+                st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد تحت 35 تنطبق عليها شروط الفوليوم الأمان.")
                 
             st.write("---")
             
-            st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية (سيولة ضخمة وعزم سريع)")
+            st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية (سيولة ضخمة وعزم سريع محمي من التضخم)")
             if short_term_trading:
                 st.dataframe(pd.DataFrame(short_term_trading).sort_values(by="فوليوم اليوم", ascending=False), use_container_width=True)
             else:
-                st.info("لا توجد أسهم عليها حركات مضاربية عنيفة غير طبيعية حالياً.")
+                st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة والآمنة حالياً.")
 
             st.write("---")
             
