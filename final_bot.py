@@ -11,7 +11,6 @@ st.title("🏆 نظام المسح الفني الاحترافي مع التنب
 st.write("تم دمج نظام تنبيهات تليجرام الذكي لحفظ إعداداتك تلقائياً وإرسال رسائل فورية لهاتفك عند وصول أي سهم لمستويات التضخم السعري أو جني الأرباح.")
 
 # --- القراءة التلقائية الآمنة من Streamlit Secrets ---
-# إذا قمت بضبطها في لوحة تحكم Streamlit Secrets سيتم قراءتها فوراً، وإلا ستظهر فارغة لتكتبها يدوياً
 default_token = st.secrets.get("TELEGRAM_TOKEN", "")
 default_chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
@@ -101,7 +100,6 @@ with tab1:
                     elif price >= upper or rsi >= 70:
                         decision = "SELL / TAKE PROFIT 🚨"
                         color = "#e74c3c"
-                        # تنبيه فوري لتليجرام في الفحص اليدوي
                         alert_msg = f"⚠️ *تنبيه تضخم سعري يدوياً*\nالسهم: {selected_stock} ({ticker_input})\nالسعر الحالي: {price:.2f} ج.م\nمؤشر RSI: {rsi:.1f}\nالسهم ضرب في سقف البولينجر أو تضخم! ينصح بجني الأرباح."
                         send_telegram_alert(alert_msg)
                     else:
@@ -173,4 +171,53 @@ with tab2:
                     momentum_score = 0
                     
                     # 1. شرط الاتجاه (Trend)
-                    if e9 >
+                    if e9 > e21:
+                        momentum_score += 40
+                        momentum_score += min(((e9 - e21) / e21) * 100, 10)
+                    
+                    # 2. شرط الـ RSI الذهبي
+                    if 45 <= r <= 60:
+                        momentum_score += 30
+                    elif 30 <= r < 45:
+                        momentum_score += 15
+                    elif 60 < r < 70:
+                        momentum_score += 10
+                    else:
+                        momentum_score -= 20
+                        
+                    # 3. مساحة الصعود داخل البولينجر
+                    if u > l:
+                        position_in_band = (u - p) / (u - l)
+                        momentum_score += position_in_band * 20
+                    
+                    # تحديد الحالة اللفظية والتنبيهات التلقائية عند التضخم السعري
+                    if momentum_score >= 70:
+                        status = "🟢 شراء قوي جداً (فرصة ذهبية)"
+                    elif 50 <= momentum_score < 70:
+                        status = "🟢 شراء مضاربي (عزم صاعد)"
+                    elif 30 <= momentum_score < 50:
+                        status = "🟡 HOLD (احتفاظ / حيادي)"
+                    elif 10 <= momentum_score < 30:
+                        status = "🔴 بيع / تخفيف كميات"
+                        send_telegram_alert(f"🚨 *تنبيه خروج وتخفيف كميات* 🚨\nالسهم: {name} ({ticker})\nالسعر الحالي: {p:.2f} ج.م\nمؤشر RSI: {r:.1f}\nالوضع: بدأ السهم في التضخم السعري وفقدان العزم الفني!")
+                    else:
+                        status = "🔴 خروج فوري (قرب القمة/كسر اتجاه)"
+                        send_telegram_alert(f"🔥 *إشارة خروج عاجلة وقصوى* 🔥\nالسهم: {name} ({ticker})\nالسعر الحالي: {p:.2f} ج.م\nمؤشر RSI: {r:.1f}\nالوضع: تضخم شرائي خطير جداً وجني أرباح حتمي!")
+                        
+                    scan_results.append({
+                        "النقاط الفنية (من 100)": round(momentum_score, 1),
+                        "اسم الشركة": name,
+                        "الرمز البرمجي": ticker,
+                        "السعر الحالي (ج.م)": round(p, 2),
+                        "مؤشر RSI": round(r, 1),
+                        "التقييم الفني المدمج": status
+                    })
+                except:
+                    continue
+            
+            if scan_results:
+                result_df = pd.DataFrame(scan_results)
+                result_df = result_df.sort_values(by="النقاط الفنية (من 100)", ascending=False)
+                
+                st.success("تم الترتيب الفني الاحترافي بنجاح! تحقق من تطبيق تليجرام لوصول إشعارات للأسهم المتضخمة.")
+                st.dataframe(result_df, use_container_width=True)
