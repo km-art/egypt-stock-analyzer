@@ -11,7 +11,7 @@ st.set_page_config(page_title="محلل البورصة المصرية الاحت
 st.title("🦅 قناص البورصة المصرية (النسخة المتكاملة المقفلة ضد المخاطر)")
 st.write("تم تقفيل الكود بمعايير صارمة: إضافة حد أدنى للفوليوم لحجب الأسهم الميتة، وفلاتر حماية من التضخم الحاد.")
 
-# --- القراءة التلقائية الآمنة من Streamlit Secrets ---
+# القراءة التلقائية من Streamlit Secrets كخيار احتياطي
 default_token = st.secrets.get("TELEGRAM_TOKEN", "")
 default_chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
@@ -21,10 +21,13 @@ TELEGRAM_TOKEN = st.sidebar.text_input("أدخل Token البوت:", value=defau
 TELEGRAM_CHAT_ID = st.sidebar.text_input("أدخل Chat ID الخاص بك:", value=default_chat_id)
 
 def send_telegram_alert(message):
-    """دالة لإرسال رسالة فورية إلى هاتف المستخدم عبر تليجرام"""
-    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    """دالة لإرسال رسالة فورية إلى هاتف المستخدم عبر تليجرام مباشرة من الخانات"""
+    token = TELEGRAM_TOKEN if TELEGRAM_TOKEN else default_token
+    chat_id = TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else default_chat_id
+    
+    if token and chat_id:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
         try:
             requests.post(url, json=payload)
         except Exception as e:
@@ -33,7 +36,7 @@ def send_telegram_alert(message):
 # القائمة الكاملة لرموز أسهم السوق المصري (EGX) على Yahoo Finance
 ALL_EGX_STOCKS = {
     "السويدي إليكتريك": "SWDY.CA", "البنك التجاري الدولي": "COMI.CA", "مصرف أبوظبي الإسلامي": "ADIB.CA",
-    "مجموعة طلعت مستفى": "TMGH.CA", "بلتون المالية القابضة": "BTFH.CA", "فوري للمدفوعات الإلكترونية": "FWRY.CA",
+    "مجموعة طلعت مصطفى": "TMGH.CA", "بلتون المالية القابضة": "BTFH.CA", "فوري للمدفوعات الإلكترونية": "FWRY.CA",
     "إي فاينانس للاستثمارات": "EFIH.CA", "أبو قير للأسمدة": "ABUK.CA", "مصر لإنتاج الأسمدة - موبكو": "MFPC.CA",
     "سيدي كرير للبتروكيماويات": "SKPC.CA", "الأسكندرية لتداول الحاويات": "ALCN.CA", "المصرية للاتصالات": "ETEL.CA",
     "إعمار مصر للتنمية": "EMFD.CA", "مدينة مصر للإسكان": "MASR.CA", "مصر الجديدة للإسكان": "HELI.CA",
@@ -234,7 +237,6 @@ with tab2:
                     
                     elif e9 > e21:
                         if vol_today > (vol_ma10 * 1.15) and 50 <= r <= 78:
-                            # نحتفظ بالتقييم التفصيلي مع إضافة دلالة الجدول
                             data_entry["التقييم الفني"] = f"{status} [مضاربة لحظية]"
                             short_term_trading.append(data_entry)
                         else:
