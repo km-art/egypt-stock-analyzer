@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import streamlit as st
 
@@ -12,15 +13,35 @@ st.caption(
 )
 
 # ---------------------------------------------------------------------------
-# الشريط الجانبي: اختيار الأسهم والإعدادات
+# الشريط الجانبي: إدارة وحفظ الأسهم والإعدادات
 # ---------------------------------------------------------------------------
-st.sidebar.header("⚙️ الإعدادات")
+st.sidebar.header("⚙️ الإعدادات وإدارة الأسهم")
 
+# 1. إدارة ملف حفظ الأسهم لتجنب فتح محرر الأكواد
+SAVED_TICKERS_FILE = "custom_tickers.txt"
+
+if os.path.exists(SAVED_TICKERS_FILE):
+    with open(SAVED_TICKERS_FILE, "r", encoding="utf-8") as f:
+        current_tickers_list = f.read()
+else:
+    # القائمة الافتراضية المستوردة من سكريبت التصفية
+    current_tickers_list = "\n".join(EGX_TICKERS)
+
+# 2. عرض المربع النصي لتعديل الأسهم مباشرة من الواجهة
 custom_tickers_text = st.sidebar.text_area(
     "رموز الأسهم (سطر لكل رمز، بصيغة .CA)",
-    value="\n".join(EGX_TICKERS),
+    value=current_tickers_list,
     height=250,
 )
+
+# 3. زر الحفظ التلقائي في ملف الإعدادات للاستغناء عن الـ VS Code
+if st.sidebar.button("💾 حفظ القائمة الحالية كافتراضية"):
+    with open(SAVED_TICKERS_FILE, "w", encoding="utf-8") as f:
+        f.write(custom_tickers_text.strip())
+    st.sidebar.success("✅ تم حفظ وتحديث القائمة بنجاح!")
+    st.rerun()
+
+# تجهيز الأسهم للتحليل
 tickers = [t.strip() for t in custom_tickers_text.splitlines() if t.strip()]
 
 include_fundamentals = st.sidebar.checkbox("تضمين التحليل الأساسي (بيانات مالية)", value=True)
