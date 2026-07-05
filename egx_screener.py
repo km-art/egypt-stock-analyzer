@@ -1,0 +1,241 @@
+import time
+import numpy as np
+import pandas as pd
+
+from data_providers import get_provider
+
+# ---------------------------------------------------------------------------
+# 1) قائمة الأسهم الموسعة والمحدثة للبورصة المصرية (EGX30 والأسهم النشطة)
+# ---------------------------------------------------------------------------
+EGX_TICKERS = [
+    "COMI.CA",   # البنك التجاري الدولي
+    "HRHO.CA",   # إي اف جي هيرميس
+    "TMGH.CA",   # مجموعة طلعت مصطفى
+    "SWDY.CA",   # السويدي إليكتريك
+    "EAST.CA",   # الشرقية - إيسترن كومباني
+    "ETEL.CA",   # المصرية للاتصالات
+    "ORWE.CA",   # النساجون الشرقيون
+    "ABUK.CA",   # أبو قير للأسمدة
+    "SKPC.CA",   # سيدي كرير للبتروكيماويات
+    "EFIH.CA",   # إي فاينانس للاستثمارات الرقمية
+    "ORAS.CA",   # أوراسكوم للإنشاءات
+    "AMOC.CA",   # الإسكندرية للزيوت المعدنية (أموك)
+    "MFPC.CA",   # مصر لإنتاج الأسمدة (موبكو)
+    "PHDC.CA",   # بالم هيلز للتعمير
+    "EKHO.CA",   # الشركة المصرية الكويتية القابضة
+    "JUFO.CA",   # جهينة للصناعات الغذائية
+    "FWRY.CA",   # فوري لتكنولوجيا البنوك
+    "ISPH.CA",   # ابن سينا فارما
+]
+
+HISTORY_DAYS = 365 + 30   
+
+
+# ---------------------------------------------------------------------------
+# 2) دوال حساب المؤشرات الفنية
+# ---------------------------------------------------------------------------
+def compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(50)
+
+
+def compute_macd(close: pd.Series, fast=12, slow=26, signal=9):
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    hist = macd_line - signal_line
+    return macd_line, signal_line, hist
+
+
+def compute_bollinger(close: pd.Series, period: int = 20, num_std: float = 2.0):
+    mid = close.rolling(period).mean()
+    std = close.rolling(period).std()
+    upper = mid + num_std * std
+    lower = mid - num_std * std
+    return upper, mid, lower
+
+
+def score_fundamentals(f: dict) -> int:
+    score = 50
+
+    pe = f.get("pe_ratio")
+    if pe is not None and pe > 0:
+        if pe < 12:
+            score += 10
+        elif pe > 25:
+            score -= 10
+
+    pm = f.get("profit_margin_%")
+    if pm is not None:
+        if pm > 15:
+            score += 10
+        elif pm < 0:
+            score -= 15
+
+    roe = f.get("roe_%")
+    if roe is not None:
+        if roe > 15:
+            score += 10
+        elif roe < 5:
+            score -= 5
+
+    dte = f.get("debt_to_equity")
+    if dte is not None:
+        if dte < 50:
+            score += 5
+        elif dte > 150:
+            score -= 10
+
+    dy = f.get("dividend_yield_%")
+    if dy is not None and dy > 0:
+        if dy > 5:
+            score += 5
+
+    rg = f.get("revenue_growth_%")
+    if rg is not None:
+        if rg > 10:
+            score += 10
+        elif rg < 0:
+            score -= 10
+
+    return max(0, min(100, score))
+
+
+# ---------------------------------------------------------------------------
+# 3) تحميل البيانات وتحليل سهم واحد
+# ---------------------------------------------------------------------------
+def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> dict | None:
+    try:
+        df = provider.get_price_history(ticker, period_days=HISTORY_DAYS)
+    except Exception as e:
+        print(f"⚠️  فشل تحميل بيانات {ticker}: {e}")
+        return None
+
+    if df is None or df.empty or len(df) < 60:
+        print(f"⚠️  بيانات غير كافية لـ {ticker}")
+        return None
+
+    close = df["Close"].squeeze()
+    volume = df["Volume"].squeeze()
+
+    sma20 = close.rolling(20).mean()
+    sma50 = close.rolling(50).mean()
+    sma200 = close.rolling(200).mean() if len(close) >= 200 else pd.Series([np.nan] * len(close))
+    rsi = compute_rsi(close)
+    macd_line, signal_line, hist = compute_macd(close)
+
+    last_price = float(close.iloc[-1])
+    last_rsi = float(rsi.iloc[-1])
+    last_sma20 = float(sma20.iloc[-1])
+    last_sma50 = float(sma50.iloc[-1])
+    last_sma200 = float(sma200.iloc[-1]) if not pd.isna(sma200.iloc[-1]) else None
+    last_hist = float(hist.iloc[-1])
+    prev_hist = float(hist.iloc[-2])
+    avg_vol20 = float(volume.rolling(20).mean().iloc[-1])
+    last_vol = float(volume.iloc[-1])
+
+    ret_3m = (last_price / close.iloc[-63] - 1) * 100 if len(close) > 63 else np.nan
+    ret_1y = (last_price / close.iloc[0] - 1) * 100
+
+    daily_ret = close.pct_change().dropna()
+    volatility = float(daily_ret.std() * np.sqrt(252) * 100)
+
+    # نظام تقييم قصير المدى
+    short_score = 50
+    if last_rsi < 30:
+        short_score += 20          
+    elif last_rsi > 70:
+        short_score -= 20          
+    if last_hist > 0 and prev_hist <= 0:
+        short_score += 15          
+    elif last_hist < 0 and prev_hist >= 0:
+        short_score -= 15          
+    if last_price > last_sma20:
+        short_score += 10
+    else:
+        short_score -= 10
+    if last_vol > 1.5 * avg_vol20:
+        short_score += 5           
+    short_score = max(0, min(100, short_score))
+
+    # نظام تقييم طويل المدى
+    long_score = 50
+    if last_sma200 is not None:
+        if last_price > last_sma200:
+            long_score += 15
+        else:
+            long_score -= 15
+        if last_sma50 > last_sma200:
+            long_score += 10        
+        else:
+            long_score -= 10
+    if not np.isnan(ret_1y):
+        if ret_1y > 15:
+            long_score += 15
+        elif ret_1y < -15:
+            long_score -= 15
+    if volatility < 25:
+        long_score += 10            
+    elif volatility > 45:
+        long_score -= 10
+    long_score = max(0, min(100, long_score))
+
+    result = {
+        "ticker": ticker,
+        "price": round(last_price, 2),
+        "rsi": round(last_rsi, 1),
+        "macd_hist": round(last_hist, 3),
+        "above_sma20": last_price > last_sma20,
+        "above_sma200": (last_sma200 is not None and last_price > last_sma200),
+        "ret_3m_%": round(ret_3m, 1) if not np.isnan(ret_3m) else None,
+        "ret_1y_%": round(ret_1y, 1),
+        "volatility_%": round(volatility, 1),
+        "short_term_score": short_score,
+        "long_term_technical_score": long_score,
+    }
+
+    if include_fundamentals:
+        fundamentals = provider.get_fundamentals(ticker)
+        fund_score = score_fundamentals(fundamentals)
+        result.update(fundamentals)
+        result["fundamental_score"] = fund_score
+        result["long_term_score"] = round(0.5 * long_score + 0.5 * fund_score, 1)
+    else:
+        result["long_term_score"] = long_score
+
+    return result
+
+
+def run_screener(tickers=None, include_fundamentals=True, save_csv=True, verbose=True,
+                  provider=None, provider_name="yahoo", provider_kwargs=None):
+    if provider is None:
+        provider = get_provider(provider_name, **(provider_kwargs or {}))
+
+    tickers = tickers or EGX_TICKERS
+    results = []
+    for t in tickers:
+        if verbose:
+            print(f"جاري تحليل {t} ...")
+        r = analyze_ticker(t, provider, include_fundamentals=include_fundamentals)
+        if r:
+            results.append(r)
+        time.sleep(0.5)  
+
+    if not results:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(results)
+    if save_csv:
+        df.to_csv("egx_screener_results.csv", index=False, encoding="utf-8-sig")
+    return df
+
+
+if __name__ == "__main__":
+    run_screener()
