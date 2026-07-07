@@ -219,7 +219,12 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
     """
     يحمّل بيانات مجموعة أسهم على دفعات (batches) بدل طلب واحد ضخم لكل الأسهم،
     عشان نتفادى رفض Yahoo Finance للطلب أو فشله جزئياً لما يكون العدد كبير (230+ سهم).
-    يرجع (dict لكل سهم بياناته, list بالأسهم اللي فشل تحميلها).
+
+    بعد الدفعات، بيعمل "محاولة ثانية" لكل سهم فشل - بيحمّله لوحده مش جوه دفعة،
+    لأن كتير من فشل الدفعات بيكون سببه سهم واحد بايظ بيبوّظ الدفعة كلها أو
+    رفض مؤقت لحظي (rate limit)، مش لأن السهم نفسه مالوش بيانات فعلاً.
+
+    يرجع (dict لكل سهم بياناته, list بالأسهم اللي فشلت حتى بعد إعادة المحاولة).
     """
     tickers = list(tickers_tuple)
     all_frames = {}
@@ -246,6 +251,21 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
         # نستنى شوية بين الدفعات (إلا لو كانت الدفعة الأخيرة) عشان نقلل احتمال الرفض
         if i + BATCH_SIZE < len(tickers):
             time.sleep(BATCH_DELAY)
+
+    # محاولة ثانية: نحمّل كل سهم فشل لوحده (مش جوه دفعة) - غالباً بتنقذ نسبة كبيرة منهم
+    still_failed = []
+    if failed:
+        for t in failed:
+            try:
+                df_t = yf.download(t, period=period, progress=False, group_by='ticker')
+                if df_t is not None and not df_t.dropna(how='all').empty:
+                    all_frames[t] = df_t
+                else:
+                    still_failed.append(t)
+            except Exception:
+                still_failed.append(t)
+            time.sleep(0.3)  # فاصل بسيط بين المحاولات الفردية
+        failed = still_failed
 
     return all_frames, failed
 
@@ -326,7 +346,7 @@ with tab2:
         progress_bar = st.progress(0)
         total_stocks = len(ALL_EGX_STOCKS)
         
-        with st.spinner(f"جاري مسح {len(ALL_EGX_STOCKS)} سهم على دفعات ({BATCH_SIZE} سهم لكل دفعة)..."):
+        with st.spinner(f"جاري مسح {len(ALL_EGX_STOCKS)} سهم على دفعات ({BATCH_SIZE} سهم لكل دفعة) + إعادة محاولة الأسهم اللي تفشل..."):
             tickers_list = list(ALL_EGX_STOCKS.values())
             all_data, failed_tickers = fetch_batch_data(tuple(tickers_list), period="60d")
 
