@@ -6,13 +6,12 @@ import plotly.graph_objects as go
 import requests
 import numpy as np
 
-# إعدادات الصفحة والمظهر العام
+# إعدادات الصفحة
 st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
-st.title("🦅 قناص البورصة المصرية (النسخة المتكاملة المقفلة ضد المخاطر)")
-st.write("تم تقفيل الكود بمعايير صارمة: إضافة حد أدنى للفوليوم لحجب الأسهم الميتة، وفلاتر حماية من التضخم الحاد.")
+st.title("🦅 قناص البورصة المصرية (النسخة المتكاملة)")
 
-# إعدادات عامة قابلة للتعديل
+# إعدادات عامة
 BATCH_SIZE = 30       
 BATCH_DELAY = 1.5     
 CROSS_LOOKBACK = 3    
@@ -20,33 +19,26 @@ CROSS_LOOKBACK = 3
 try:
     default_token = st.secrets.get("TELEGRAM_TOKEN", "")
     default_chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
-except Exception:
+except:
     default_token = ""
     default_chat_id = ""
 
-st.sidebar.header("⚙️ إعدادات إشعارات الموبايل (تليجرام)")
-TELEGRAM_TOKEN = st.sidebar.text_input("أدخل Token البوت:", value=default_token, type="password")
-TELEGRAM_CHAT_ID = st.sidebar.text_input("أدخل Chat ID الخاص بك:", value=default_chat_id)
+st.sidebar.header("⚙️ إعدادات تليجرام")
+TELEGRAM_TOKEN = st.sidebar.text_input("أدخل Token:", value=default_token, type="password")
+TELEGRAM_CHAT_ID = st.sidebar.text_input("أدخل Chat ID:", value=default_chat_id)
 
 def send_telegram_alert(message):
     token = TELEGRAM_TOKEN if TELEGRAM_TOKEN else default_token
     chat_id = TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else default_chat_id
-
-    if not (token and chat_id):
-        return False, "لم يتم إدخال Token أو Chat ID - تم تخطي الإرسال."
-
+    if not (token and chat_id): return False, "Missing credentials"
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
     try:
         resp = requests.post(url, json=payload, timeout=10)
-        if resp.status_code == 200 and resp.json().get("ok"):
-            return True, "تم إرسال التنبيه على تليجرام بنجاح ✅"
-        return False, f"فشل الإرسال (كود {resp.status_code}): تأكد من صحة Token و Chat ID"
-    except requests.exceptions.Timeout:
-        return False, "انتهت مهلة الاتصال بتليجرام (Timeout) - جرب تاني."
-    except requests.exceptions.RequestException as e:
-        return False, f"خطأ في الاتصال بتليجرام: {e}"
+        return resp.status_code == 200, "Success"
+    except: return False, "Error"
 
+# القائمة الكاملة للأسهم
 ALL_EGX_STOCKS = {
     "A Capital Holding": "ACAP.CA", "AJWA For Food Industries Co. Egypt": "AJWA.CA",
     "ASEC Company for Mining ASCOM": "ASCM.CA", "Act Financial": "ACTF.CA",
@@ -138,4 +130,102 @@ ALL_EGX_STOCKS = {
     "إعمار مصر للتنمية": "EMFD.CA", "إي فاينانس للاستثمارات": "EFIH.CA",
     "إيديتا للصناعات الغذائية": "EFID.CA", "ابن سينا فارما": "ISPH.CA",
     "الأسكندرية لتداول الحاويات": "ALCN.CA", "الأسكندرية للزيوت المعدنية - أموك": "AMOC.CA",
-"الاسكندرية لأسمنت بورتلاند": "ALEX.CA", "الاسماعيلية مصر للدواجن": "ISMA.CA",
+    "الاسكندرية لأسمنت بورتلاند": "ALEX.CA", "الاسماعيلية مصر للدواجن": "ISMA.CA",
+    "البنك التجاري الدولي": "COMI.CA", "التعمير والاستشارات الهندسية": "DAPH.CA",
+    "الجوهرة - العز للسيراميك": "ECAP.CA", "الجيزة العامة للمقاولات": "GGCC.CA",
+    "الزيوت المستخلصة ومنتجاتها": "ZEOT.CA", "السويدي إليكتريك": "SWDY.CA",
+    "الشرقية - إيسترن كومباني": "EAST.CA", "الشمس للإسكان والتعمير": "ELSH.CA",
+    "الصعيد العامة للمقاولات": "UEGC.CA", "العبوات الطبية": "MEPA.CA",
+    "العربية للأدوية": "ADCI.CA", "العز الدخيلة للصلب": "IRAX.CA",
+    "القاهرة للإسكان والتعمير": "ELKA.CA", "القاهرة للدواجن": "POUL.CA",
+    "القلعة للاستشارات المالية": "CCAP.CA", "المصرية للاتصالات": "ETEL.CA",
+    "المطورون العرب القابضة": "ARAB.CA", "المنصورة للدواجن": "MPCO.CA",
+    "النيل للأدوية": "NIPH.CA", "بالم هيلز للتعمير": "PHDC.CA",
+    "بلتون المالية القابضة": "BTFH.CA", "بنك البركة مصر": "SAUD.CA",
+    "بنك التعمير والإسكان": "HDBK.CA", "بنك فيصل الإسلامي - بالجنيه": "FAIT.CA",
+    "بنك قناة السويس": "CANA.CA", "جهينة للصناعات الغذائية": "JUFO.CA",
+    "جي بي كورب": "GBCO.CA", "حديد عز": "ESRS.CA",
+    "دومتي": "DOMT.CA", "راكتا لورق التعبئة": "RAKT.CA",
+    "سيدي كرير للبتروكيماويات": "SKPC.CA", "شمال أفريقيا للاستثمار": "NATI.CA",
+    "صناع التغليف - يونيفرت": "UNIP.CA", "طاقة عربية": "TAQA.CA",
+    "عبر المحيطات للمقاولات": "GOCE.CA", "غاز مصر": "EGAS.CA",
+    "فاركو للأدوية": "PHAR.CA", "فوري للمدفوعات الإلكترونية": "FWRY.CA",
+    "كيما - الصناعات الكيماوية": "EGCH.CA", "مجموعة إيـفـإى جـي هيرميس": "HRHO.CA",
+    "مجموعة طلعت مصطفى": "TMGH.CA", "مدينة مصر للإسكان": "MASR.CA",
+    "مصر الجديدة للإسكان": "HELI.CA", "مصر لإنتاج الأسمدة - موبكو": "MFPC.CA",
+    "مصر للألومنيوم": "EGAL.CA", "مصرف أبوظبي الإسلامي": "ADIB.CA",
+    "مطاحن مصر الوسطى": "CEFM.CA", "مطاحن ومخابز شمال القاهرة": "MNSF.CA"
+}
+
+def calculate_indicators(df):
+    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(-1)
+    df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
+    df['EMA21'] = df['Close'].ewm(span=21, adjust=False).mean()
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    df['RSI_14'] = 100 - (100 / (1 + (gain / (loss + 0.00001))))
+    df['MA20'] = df['Close'].rolling(window=20).mean()
+    df['STD20'] = df['Close'].rolling(window=20).std()
+    df['Upper_Band'] = df['MA20'] + (2 * df['STD20'])
+    df['Lower_Band'] = df['MA20'] - (2 * df['STD20'])
+    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+    raw_money_flow = typical_price * df['Volume']
+    typical_price_diff = typical_price.diff()
+    pos_flow = pd.Series(np.where(typical_price_diff > 0, raw_money_flow, 0), index=df.index)
+    neg_flow = pd.Series(np.where(typical_price_diff < 0, raw_money_flow, 0), index=df.index)
+    pos_mf14 = pos_flow.rolling(window=14).sum()
+    neg_mf14 = neg_flow.rolling(window=14).sum()
+    df['MFI_14'] = 100 - (100 / (1 + (pos_mf14 / (neg_mf14 + 0.00001))))
+    df['Vol_MA10'] = df['Volume'].rolling(window=10).mean()
+    return df
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_batch_data(tickers_tuple, period="60d"):
+    tickers = list(tickers_tuple)
+    all_frames = {}
+    for i in range(0, len(tickers), BATCH_SIZE):
+        batch = tickers[i:i + BATCH_SIZE]
+        try:
+            data = yf.download(batch, period=period, progress=False, group_by='ticker', threads=True)
+            for t in batch:
+                try:
+                    df_t = data[t] if len(batch) > 1 else data
+                    if not df_t.dropna(how='all').empty: all_frames[t] = df_t
+                except: continue
+            time.sleep(BATCH_DELAY)
+        except: continue
+    return all_frames
+
+tab1, tab2 = st.tabs(["🔍 تحليل سهم", "🏆 مسح السوق"])
+
+with tab1:
+    selected_stock = st.selectbox("اختر السهم:", list(ALL_EGX_STOCKS.keys()))
+    ticker_input = ALL_EGX_STOCKS[selected_stock]
+    if st.button("تحليل"):
+        df = yf.download(ticker_input, period="100d", progress=False)
+        if not df.empty:
+            df = calculate_indicators(df)
+            last = df.iloc[-1]
+            st.metric("السعر الحالي", f"{float(last['Close']):.2f} ج.م")
+            st.line_chart(df[['Close', 'EMA9', 'EMA21']])
+
+with tab2:
+    if st.button("تشغيل المسح"):
+        all_data = fetch_batch_data(tuple(ALL_EGX_STOCKS.values()))
+        results = []
+        for name, ticker in ALL_EGX_STOCKS.items():
+            if ticker in all_data:
+                df = calculate_indicators(all_data[ticker].dropna(how='all'))
+                if len(df) < 25: continue
+                last = df.iloc[-1]
+                p, e9, e21, r = float(last['Close']), float(last['EMA9']), float(last['EMA21']), float(last['RSI_14'])
+                if e9 > e21 and r < 60:
+                    results.append({"الشركة": name, "السعر": round(p, 2), "النقاط": round(r, 1)})
+        
+        if results:
+            df_res = pd.DataFrame(results)
+            st.dataframe(df_res)
+            msg = "🦅 *تقرير القناص:* \n" + "\n".join([f"- {r['الشركة']}: {r['السعر']} ج.م" for r in results[:10]])
+            send_telegram_alert(msg)
+            st.success("تم الإرسال!")
