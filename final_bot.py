@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -11,9 +12,19 @@ st.set_page_config(page_title="محلل البورصة المصرية الاحت
 st.title("🦅 قناص البورصة المصرية (النسخة المتكاملة المقفلة ضد المخاطر)")
 st.write("تم تقفيل الكود بمعايير صارمة: إضافة حد أدنى للفوليوم لحجب الأسهم الميتة، وفلاتر حماية من التضخم الحاد.")
 
+# إعدادات عامة قابلة للتعديل
+BATCH_SIZE = 30       # عدد الأسهم في كل طلب تحميل - تقسيم لدفعات لتفادي رفض Yahoo Finance للطلبات الضخمة
+BATCH_DELAY = 1.5     # ثواني انتظار بين كل دفعة وأخرى
+CROSS_LOOKBACK = 3    # كام يوم نرجع بيهم للخلف لاكتشاف "تقاطع جديد" (نفس القيمة تستخدم في التاب الأول والثاني)
+
 # القراءة التلقائية من Streamlit Secrets كخيار احتياطي
-default_token = st.secrets.get("TELEGRAM_TOKEN", "")
-default_chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
+try:
+    default_token = st.secrets.get("TELEGRAM_TOKEN", "")
+    default_chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
+except Exception:
+    # لو مفيش ملف secrets.toml أصلاً، منسيبش الأداة تقع - نكمل بقيم فاضية
+    default_token = ""
+    default_chat_id = ""
 
 # إعدادات التنبيهات في الشريط الجانبي
 st.sidebar.header("⚙️ إعدادات إشعارات الموبايل (تليجرام)")
@@ -21,17 +32,27 @@ TELEGRAM_TOKEN = st.sidebar.text_input("أدخل Token البوت:", value=defau
 TELEGRAM_CHAT_ID = st.sidebar.text_input("أدخل Chat ID الخاص بك:", value=default_chat_id)
 
 def send_telegram_alert(message):
-    """دالة لإرسال رسالة فورية إلى هاتف المستخدم عبر تليجرام مباشرة من الخانات"""
+    """
+    يرسل رسالة عبر تليجرام ويرجع (نجح: bool, رسالة الحالة: str)
+    بدل ما كان بيفشل بصمت لو الـ token أو الـ chat_id غلط.
+    """
     token = TELEGRAM_TOKEN if TELEGRAM_TOKEN else default_token
     chat_id = TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else default_chat_id
-    
-    if token and chat_id:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
-        try:
-            requests.post(url, json=payload)
-        except Exception as e:
-            st.sidebar.error(f"فشل إرسال التنبيه: {e}")
+
+    if not (token and chat_id):
+        return False, "لم يتم إدخال Token أو Chat ID - تم تخطي الإرسال."
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    try:
+        resp = requests.post(url, json=payload, timeout=10)
+        if resp.status_code == 200 and resp.json().get("ok"):
+            return True, "تم إرسال التنبيه على تليجرام بنجاح ✅"
+        return False, f"فشل الإرسال (كود {resp.status_code}): تأكد من صحة Token و Chat ID"
+    except requests.exceptions.Timeout:
+        return False, "انتهت مهلة الاتصال بتليجرام (Timeout) - جرب تاني."
+    except requests.exceptions.RequestException as e:
+        return False, f"خطأ في الاتصال بتليجرام: {e}"
 
 # القائمة الكاملة لرموز أسهم السوق المصري (EGX) على Yahoo Finance
 # تم تحديثها لتشمل كل الأسهم المدرجة في egx_all_listed_stocks.csv (230 سهم إجمالاً)
@@ -153,7 +174,9 @@ ALL_EGX_STOCKS = {
     "مطاحن مصر الوسطى": "CEFM.CA", "مطاحن ومخابز شمال القاهرة": "MNSF.CA",
 }
 
-ALL_EGX_STOCKS = dict(sorted(ALL_EGX_STOCKS.items()))
+# نرتب حسب رمز السهم (مش اسم الشركة) عشان الترتيب يبقى ثابت ومتسق
+# سواء كان اسم الشركة عربي أو إنجليزي (خلاف كده بيطلع ترتيب غريب لخلط اللغتين)
+ALL_EGX_STOCKS = dict(sorted(ALL_EGX_STOCKS.items(), key=lambda kv: kv[1]))
 
 def calculate_indicators(df):
     if isinstance(df.columns, pd.MultiIndex):
@@ -184,6 +207,48 @@ def calculate_indicators(df):
     df['Vol_MA10'] = df['Volume'].rolling(window=10).mean()
     return df
 
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_single_stock(ticker: str, period: str = "100d"):
+    """تحميل بيانات سهم واحد مع تخزين مؤقت (cache) لمدة 5 دقايق لتقليل الطلبات المكررة."""
+    return yf.download(ticker, period=period, progress=False, group_by='ticker')
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
+    """
+    يحمّل بيانات مجموعة أسهم على دفعات (batches) بدل طلب واحد ضخم لكل الأسهم،
+    عشان نتفادى رفض Yahoo Finance للطلب أو فشله جزئياً لما يكون العدد كبير (230+ سهم).
+    يرجع (dict لكل سهم بياناته, list بالأسهم اللي فشل تحميلها).
+    """
+    tickers = list(tickers_tuple)
+    all_frames = {}
+    failed = []
+
+    for i in range(0, len(tickers), BATCH_SIZE):
+        batch = tickers[i:i + BATCH_SIZE]
+        try:
+            data = yf.download(batch, period=period, progress=False, group_by='ticker', threads=True)
+        except Exception:
+            failed.extend(batch)
+            continue
+
+        for t in batch:
+            try:
+                df_t = data[t] if len(batch) > 1 else data
+                if df_t is not None and not df_t.dropna(how='all').empty:
+                    all_frames[t] = df_t
+                else:
+                    failed.append(t)
+            except Exception:
+                failed.append(t)
+
+        # نستنى شوية بين الدفعات (إلا لو كانت الدفعة الأخيرة) عشان نقلل احتمال الرفض
+        if i + BATCH_SIZE < len(tickers):
+            time.sleep(BATCH_DELAY)
+
+    return all_frames, failed
+
 tab1, tab2 = st.tabs(["🔍 فحص سهم تفصيلي + رسم بياني", "🏆 مسح وترتيب السوق الاحترافي"])
 
 with tab1:
@@ -200,11 +265,11 @@ with tab1:
     if st.button("تحليل السهم ورسم المنحنى ⚡"):
         with st.spinner("جاري جلب البيانات..."):
             try:
-                df = yf.download(ticker_input, period="100d", progress=False, group_by='ticker')
+                df = fetch_single_stock(ticker_input, period="100d")
                 if not df.empty:
                     df = calculate_indicators(df)
                     last_row = df.iloc[-1]
-                    prev_row = df.iloc[-3]
+                    prev_row = df.iloc[-CROSS_LOOKBACK]
                     
                     price = float(last_row['Close'].squeeze())
                     ema9 = float(last_row['EMA9'].squeeze())
@@ -261,20 +326,30 @@ with tab2:
         progress_bar = st.progress(0)
         total_stocks = len(ALL_EGX_STOCKS)
         
-        with st.spinner("جاري مسح الأسهم ورصد الفرص الصارمة..."):
+        with st.spinner(f"جاري مسح {len(ALL_EGX_STOCKS)} سهم على دفعات ({BATCH_SIZE} سهم لكل دفعة)..."):
             tickers_list = list(ALL_EGX_STOCKS.values())
-            all_data = yf.download(tickers_list, period="60d", progress=False, group_by='ticker')
-            
+            all_data, failed_tickers = fetch_batch_data(tuple(tickers_list), period="60d")
+
+            if failed_tickers:
+                st.warning(
+                    f"⚠️ تعذر تحميل بيانات {len(failed_tickers)} سهم من أصل {len(tickers_list)} "
+                    "(ممكن يكون توقف تداولهم مؤقتاً أو رفض مؤقت من المصدر)."
+                )
+
+            skipped_count = 0
             for idx, (name, ticker) in enumerate(ALL_EGX_STOCKS.items()):
                 progress_bar.progress((idx + 1) / total_stocks)
+                if ticker not in all_data:
+                    skipped_count += 1
+                    continue
                 try:
-                    stock_df = all_data[ticker].dropna(how='all') if len(tickers_list) > 1 else all_data
+                    stock_df = all_data[ticker].dropna(how='all')
                     if stock_df.empty or len(stock_df) < 25:
                         continue
                         
                     stock_df = calculate_indicators(stock_df)
                     row = stock_df.iloc[-1]
-                    prev_row = stock_df.iloc[-4]
+                    prev_row = stock_df.iloc[-CROSS_LOOKBACK]
                     
                     p = float(row['Close'])
                     e9 = float(row['EMA9'])
@@ -337,9 +412,13 @@ with tab2:
                         else:
                             data_entry["التقييم الفني"] = f"{status} [استثمار مستقر]"
                             long_term_investment.append(data_entry)
-                except:
+                except Exception:
+                    skipped_count += 1
                     continue
             
+            if skipped_count:
+                st.info(f"ℹ️ تم تخطي {skipped_count} سهم أثناء التحليل (بيانات ناقصة أو تعذر حساب المؤشرات).")
+
             st.success("تم التحديث النهائي والإغلاق الهندسي للرادار بنجاح! 🦅")
             
             # --- آلية الإرسال المعدلة لـ 5 فرص ---
@@ -367,7 +446,13 @@ with tab2:
                     telegram_msg += f"- {row_tr['اسم الشركة']} | السعر: {row_tr['السعر الحالي (ج.م)']} ج.م\n"
             
             # إرسال الرسالة الكاملة والملخصة مرة واحدة فقط
-            send_telegram_alert(telegram_msg)
+            tg_success, tg_status_msg = send_telegram_alert(telegram_msg)
+            if TELEGRAM_TOKEN or default_token or TELEGRAM_CHAT_ID or default_chat_id:
+                # منعرضش حاجة لو المستخدم أصلاً مالوش إعدادات تليجرام متسجلة
+                if tg_success:
+                    st.sidebar.success(tg_status_msg)
+                else:
+                    st.sidebar.error(tg_status_msg)
             
             # عرض الجداول على الشاشة
             st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
