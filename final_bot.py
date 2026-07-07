@@ -9,7 +9,7 @@ import numpy as np
 # إعدادات الصفحة
 st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
-st.title("🦅 قناص البورصة المصرية (النسخة المتكاملة)")
+st.title("🦅 قناص البورصة المصرية (النسخة المرتبة عالمياً)")
 
 # إعدادات عامة
 BATCH_SIZE = 30       
@@ -211,21 +211,47 @@ with tab1:
             st.line_chart(df[['Close', 'EMA9', 'EMA21']])
 
 with tab2:
-    if st.button("تشغيل المسح"):
+    if st.button("تشغيل المسح والترتيب العام"):
         all_data = fetch_batch_data(tuple(ALL_EGX_STOCKS.values()))
-        results = []
+        fresh_cross = []; long_term = []; short_term = []; bottom_catch = []
+        
         for name, ticker in ALL_EGX_STOCKS.items():
             if ticker in all_data:
                 df = calculate_indicators(all_data[ticker].dropna(how='all'))
                 if len(df) < 25: continue
-                last = df.iloc[-1]
-                p, e9, e21, r = float(last['Close']), float(last['EMA9']), float(last['EMA21']), float(last['RSI_14'])
-                if e9 > e21 and r < 60:
-                    results.append({"الشركة": name, "السعر": round(p, 2), "النقاط": round(r, 1)})
+                last = df.iloc[-1]; prev = df.iloc[-CROSS_LOOKBACK]
+                p, e9, e21, r, m = float(last['Close']), float(last['EMA9']), float(last['EMA21']), float(last['RSI_14']), float(last['MFI_14'])
+                
+                score = 0
+                if e9 > e21: score += 40
+                if 50 <= m <= 70: score += 30
+                if 45 <= r <= 65: score += 20
+                
+                entry = {"اسم الشركة": name, "السعر الحالي (ج.م)": round(p, 2), "النقاط الفنية والسيولة (من 100)": score}
+                
+                if (prev['EMA9'] <= prev['EMA21']) and (e9 > e21): fresh_cross.append({**entry, "الفئة": "تأسيس"})
+                elif r < 35 and m < 35: bottom_catch.append({"اسم الشركة": name, "السعر الحالي (ج.م)": round(p, 2), "RSI": round(r, 1)})
+                elif e9 > e21:
+                    if r > 50: short_term.append({**entry, "الفئة": "مضاربة"})
+                    else: long_term.append({**entry, "الفئة": "استثمار"})
+
+        # دمج وترتيب عام
+        all_opps = fresh_cross + long_term + short_term
+        df_all = pd.DataFrame(all_opps)
         
-        if results:
-            df_res = pd.DataFrame(results)
-            st.dataframe(df_res)
-            msg = "🦅 *تقرير القناص:* \n" + "\n".join([f"- {r['الشركة']}: {r['السعر']} ج.م" for r in results[:10]])
+        if not df_all.empty:
+            df_all = df_all.sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
+            st.dataframe(df_all)
+            
+            # بناء الرسالة
+            msg = "🦅 *تقرير القناص (الترتيب العام للأقوى):* \n\n"
+            for _, row in df_all.head(20).iterrows():
+                msg += f"- {row['اسم الشركة']} ({row['الفئة']}) | {row['السعر الحالي (ج.م)']} ج.م | النقاط: {row['النقاط الفنية والسيولة (من 100)']}\n"
+            
+            if bottom_catch:
+                msg += "\n*🐋 رادار القيعان:*\n"
+                for b in bottom_catch[:5]:
+                    msg += f"- {b['اسم الشركة']} | {b['السعر الحالي (ج.م)']} ج.م | RSI: {b['RSI']}\n"
+            
             send_telegram_alert(msg)
             st.success("تم الإرسال!")
