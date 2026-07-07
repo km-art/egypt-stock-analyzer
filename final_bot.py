@@ -333,18 +333,23 @@ with tab2:
             if failed_tickers:
                 st.warning(
                     f"⚠️ تعذر تحميل بيانات {len(failed_tickers)} سهم من أصل {len(tickers_list)} "
-                    "(ممكن يكون توقف تداولهم مؤقتاً أو رفض مؤقت من المصدر)."
+                    "(ممكن يكون توقف تداولهم مؤقتاً أو رفض مؤقت من المصدر). "
+                    "التفاصيل الكاملة هتلاقيها في آخر الصفحة تحت 'الأسهم اللي اتخطاها'."
                 )
 
             skipped_count = 0
+            skipped_names = []
             for idx, (name, ticker) in enumerate(ALL_EGX_STOCKS.items()):
                 progress_bar.progress((idx + 1) / total_stocks)
                 if ticker not in all_data:
                     skipped_count += 1
+                    skipped_names.append((name, ticker, "لم يتم تحميل بياناته من المصدر"))
                     continue
                 try:
                     stock_df = all_data[ticker].dropna(how='all')
                     if stock_df.empty or len(stock_df) < 25:
+                        skipped_count += 1
+                        skipped_names.append((name, ticker, "بيانات تاريخية غير كافية (أقل من 25 يوم)"))
                         continue
                         
                     stock_df = calculate_indicators(stock_df)
@@ -412,12 +417,16 @@ with tab2:
                         else:
                             data_entry["التقييم الفني"] = f"{status} [استثمار مستقر]"
                             long_term_investment.append(data_entry)
-                except Exception:
+                except Exception as e:
                     skipped_count += 1
+                    skipped_names.append((name, ticker, f"خطأ أثناء التحليل: {e}"))
                     continue
             
             if skipped_count:
                 st.info(f"ℹ️ تم تخطي {skipped_count} سهم أثناء التحليل (بيانات ناقصة أو تعذر حساب المؤشرات).")
+                with st.expander(f"📋 عرض تفاصيل الـ {skipped_count} سهم اللي اتخطاها"):
+                    for name, ticker, reason in skipped_names:
+                        st.write(f"- **{name}** ({ticker}) — {reason}")
 
             st.success("تم التحديث النهائي والإغلاق الهندسي للرادار بنجاح! 🦅")
             
