@@ -108,6 +108,28 @@ def score_fundamentals(f: dict) -> int:
     return max(0, min(100, score))
 
 
+def compute_graham(eps, bvps, price):
+    """
+    يحسب "رقم جراهام" (Graham Number) - السعر العادل الأقصى حسب معايير
+    المستثمر الدفاعي لبنجامين جراهام:
+
+        رقم جراهام = √(22.5 × EPS × BVPS)
+
+    الرقم 22.5 = 15 (أقصى P/E مقبول) × 1.5 (أقصى P/B مقبول) - الصيغة دي
+    بتفرض الحدين الأقصيين مع بعض في معادلة واحدة، فمحتاجة EPS موجب وBVPS موجب.
+    """
+    if eps is None or bvps is None or eps <= 0 or bvps <= 0:
+        return {"graham_number": None, "graham_upside_%": None, "undervalued_per_graham": None}
+
+    graham_number = (22.5 * eps * bvps) ** 0.5
+    upside_pct = round((graham_number / price - 1) * 100, 1) if price else None
+    return {
+        "graham_number": round(graham_number, 2),
+        "graham_upside_%": upside_pct,
+        "undervalued_per_graham": price < graham_number,
+    }
+
+
 # ---------------------------------------------------------------------------
 # 3) تحميل البيانات وتحليل سهم واحد
 # ---------------------------------------------------------------------------
@@ -207,6 +229,16 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
         result.update(fundamentals)
         result["fundamental_score"] = fund_score
         result["long_term_score"] = round(0.5 * long_score + 0.5 * fund_score, 1)
+
+        # --- قاعدة جراهام للسعر العادل ---
+        graham = compute_graham(
+            eps=fundamentals.get("eps"),
+            bvps=fundamentals.get("book_value_per_share"),
+            price=last_price,
+        )
+        result.update(graham)
+        pe = fundamentals.get("pe_ratio")
+        result["pe_below_15"] = (pe is not None and 0 < pe < 15)
     else:
         result["long_term_score"] = long_score
 
