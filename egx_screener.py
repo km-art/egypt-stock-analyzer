@@ -5,30 +5,61 @@ import pandas as pd
 from data_providers import get_provider
 
 # ---------------------------------------------------------------------------
-# 1) قائمة الأسهم الموسعة والمحدثة للبورصة المصرية (EGX30 والأسهم النشطة)
+# 1) قائمة الأسهم: بتتحمّل تلقائياً من egx_all_listed_stocks.csv (223 سهم مدرج
+#    فعلياً في EGX). لازم الملف يكون في نفس المجلد. لو مش موجود، نرجع لقائمة
+#    احتياطية مختصرة عشان الكود ميكسرش.
 # ---------------------------------------------------------------------------
-EGX_TICKERS = [
-    "COMI.CA",   # البنك التجاري الدولي
-    "HRHO.CA",   # إي اف جي هيرميس
-    "TMGH.CA",   # مجموعة طلعت مصطفى
-    "SWDY.CA",   # السويدي إليكتريك
-    "EAST.CA",   # الشرقية - إيسترن كومباني
-    "ETEL.CA",   # المصرية للاتصالات
-    "ORWE.CA",   # النساجون الشرقيون
-    "ABUK.CA",   # أبو قير للأسمدة
-    "SKPC.CA",   # سيدي كرير للبتروكيماويات
-    "EFIH.CA",   # إي فاينانس للاستثمارات الرقمية
-    "ORAS.CA",   # أوراسكوم للإنشاءات
-    "AMOC.CA",   # الإسكندرية للزيوت المعدنية (أموك)
-    "MFPC.CA",   # مصر لإنتاج الأسمدة (موبكو)
-    "PHDC.CA",   # بالم هيلز للتعمير
-    "EKHO.CA",   # الشركة المصرية الكويتية القابضة
-    "JUFO.CA",   # جهينة للصناعات الغذائية
-    "FWRY.CA",   # فوري لتكنولوجيا البنوك
-    "ISPH.CA",   # ابن سينا فارما
+_TICKERS_CSV_PATH = "egx_all_listed_stocks.csv"
+_SECTORS_CSV_PATH = "egx_sectors.csv"
+
+_FALLBACK_TICKERS = [
+    "COMI.CA", "HRHO.CA", "TMGH.CA", "SWDY.CA", "EAST.CA",
+    "ETEL.CA", "ORWE.CA", "ABUK.CA", "SKPC.CA", "EFIH.CA",
+    "ORAS.CA", "AMOC.CA", "MFPC.CA", "PHDC.CA", "EKHO.CA",
+    "JUFO.CA", "FWRY.CA", "ISPH.CA",
 ]
 
-HISTORY_DAYS = 365 + 30   
+
+def load_egx_tickers(csv_path: str = _TICKERS_CSV_PATH) -> list[str]:
+    """يحمّل قائمة كل الأسهم المدرجة من egx_all_listed_stocks.csv."""
+    try:
+        df = pd.read_csv(csv_path)
+        tickers = df["yahoo_ticker"].dropna().unique().tolist()
+        if tickers:
+            return tickers
+    except Exception as e:
+        print(f"⚠️  تعذر تحميل {csv_path} ({e}). هيتم استخدام قائمة احتياطية مختصرة.")
+    return _FALLBACK_TICKERS
+
+
+def load_egx_sectors(csv_path: str = _SECTORS_CSV_PATH) -> dict:
+    """
+    يحمّل تصنيف القطاعات من egx_sectors.csv ويرجعه كـ dict:
+    ticker -> {"sector": ..., "is_major_exporter": ...}
+    لو الملف مش موجود، بيرجع dict فاضي (النتيجة هتبقى "غير مصنف" لكل الأسهم).
+    """
+    try:
+        df = pd.read_csv(csv_path)
+        return {
+            row["yahoo_ticker"]: {
+                "sector": row["sector"],
+                "is_major_exporter": bool(row["is_major_exporter"]),
+            }
+            for _, row in df.iterrows()
+        }
+    except Exception as e:
+        print(f"⚠️  تعذر تحميل {csv_path} ({e}). هيتم اعتبار كل الأسهم 'غير مصنف'.")
+        return {}
+
+
+EGX_TICKERS = load_egx_tickers()
+EGX_SECTORS = load_egx_sectors()
+
+HISTORY_DAYS = 365 + 30
+
+# الحد الأدنى لمتوسط قيمة التداول اليومية (بالجنيه المصري) عشان السهم يعتبر "سائل بما يكفي"
+MIN_AVG_TRADE_VALUE_EGP = 3_000_000
+LIQUIDITY_LOOKBACK_DAYS = 20  # متوسط قيمة التداول محسوب على آخر كام يوم تداول
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +194,11 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
     avg_vol20 = float(volume.rolling(20).mean().iloc[-1])
     last_vol = float(volume.iloc[-1])
 
+    # متوسط قيمة التداول اليومية (جنيه) = السعر × الكمية، متوسط على آخر LIQUIDITY_LOOKBACK_DAYS يوم
+    trade_value = close * volume
+    avg_trade_value = float(trade_value.rolling(LIQUIDITY_LOOKBACK_DAYS).mean().iloc[-1])
+    meets_liquidity_min = avg_trade_value >= MIN_AVG_TRADE_VALUE_EGP
+
     ret_3m = (last_price / close.iloc[-63] - 1) * 100 if len(close) > 63 else np.nan
     ret_1y = (last_price / close.iloc[0] - 1) * 100
 
@@ -209,8 +245,12 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
         long_score -= 10
     long_score = max(0, min(100, long_score))
 
+    sector_info = EGX_SECTORS.get(ticker, {})
+
     result = {
         "ticker": ticker,
+        "sector": sector_info.get("sector", "غير مصنف"),
+        "is_major_exporter": sector_info.get("is_major_exporter", False),
         "price": round(last_price, 2),
         "rsi": round(last_rsi, 1),
         "macd_hist": round(last_hist, 3),
@@ -219,6 +259,8 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
         "ret_3m_%": round(ret_3m, 1) if not np.isnan(ret_3m) else None,
         "ret_1y_%": round(ret_1y, 1),
         "volatility_%": round(volatility, 1),
+        "avg_trade_value_egp": round(avg_trade_value, 0),
+        "meets_liquidity_min": meets_liquidity_min,
         "short_term_score": short_score,
         "long_term_technical_score": long_score,
     }
