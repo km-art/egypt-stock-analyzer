@@ -105,6 +105,18 @@ with col2:
 
 filtered = df[(df["short_term_score"] >= min_short) & (df["long_term_score"] >= min_long)]
 
+st.markdown("##### 📐 فلاتر قاعدة جراهام (المستثمر الدفاعي)")
+gcol1, gcol2 = st.columns(2)
+with gcol1:
+    graham_pe_filter = st.checkbox("مكرر ربحية (P/E) أقل من 15 فقط", value=False)
+with gcol2:
+    graham_undervalued_filter = st.checkbox("سعره أقل من رقم جراهام (سعر عادل) فقط", value=False)
+
+if "pe_below_15" in filtered.columns and graham_pe_filter:
+    filtered = filtered[filtered["pe_below_15"] == True]
+if "undervalued_per_graham" in filtered.columns and graham_undervalued_filter:
+    filtered = filtered[filtered["undervalued_per_graham"] == True]
+
 # ---------------------------------------------------------------------------
 # عرض النتائج في تبويبات
 # ---------------------------------------------------------------------------
@@ -128,7 +140,8 @@ with tab2:
     long_cols = ["ticker", "price", "ret_1y_%", "volatility_%", "long_term_score"]
     if include_fundamentals:
         # إضافة المؤشرات الجديدة للجدول للمدى الطويل
-        long_cols += ["pe_ratio", "pb_ratio", "dividend_yield_%", "profit_margin_%", "roe_%", "fundamental_score"]
+        long_cols += ["pe_ratio", "pb_ratio", "dividend_yield_%", "profit_margin_%", "roe_%",
+                      "fundamental_score", "graham_number", "graham_upside_%", "undervalued_per_graham"]
     st.dataframe(
         filtered.sort_values("long_term_score", ascending=False)[long_cols],
         use_container_width=True,
