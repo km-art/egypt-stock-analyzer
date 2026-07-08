@@ -279,14 +279,25 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
         #   BVPS = السعر ÷ P/B
         eps = fundamentals.get("eps")
         bvps = fundamentals.get("book_value_per_share")
+        eps_is_derived = False
+        bvps_is_derived = False
 
         pe = fundamentals.get("pe_ratio")
         pb = fundamentals.get("pb_ratio")
 
         if eps is None and pe is not None and pe > 0:
             eps = last_price / pe
+            eps_is_derived = True
         if bvps is None and pb is not None and pb > 0:
             bvps = last_price / pb
+            bvps_is_derived = True
+
+        # نحدّث النتيجة بالقيم الفعلية المستخدمة في الحساب (سواء جاية من Yahoo
+        # مباشرة أو مُشتقة من P/E و P/B) - عشان تقدر تتأكد بنفسك من رقم جراهام
+        result["eps"] = round(eps, 3) if eps is not None else None
+        result["book_value_per_share"] = round(bvps, 3) if bvps is not None else None
+        result["eps_estimated"] = eps_is_derived
+        result["bvps_estimated"] = bvps_is_derived
 
         graham = compute_graham(eps=eps, bvps=bvps, price=last_price)
         result.update(graham)
