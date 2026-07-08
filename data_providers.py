@@ -43,6 +43,7 @@ class DataProvider(ABC):
 FUNDAMENTAL_KEYS = [
     "pe_ratio", "pb_ratio", "dividend_yield_%", "profit_margin_%",
     "roe_%", "debt_to_equity", "market_cap", "revenue_growth_%",
+    "eps", "book_value_per_share",
 ]
 
 
@@ -87,6 +88,8 @@ class YahooProvider(DataProvider):
 
         out["pe_ratio"] = info.get("trailingPE")
         out["pb_ratio"] = info.get("priceToBook")
+        out["eps"] = info.get("trailingEps")
+        out["book_value_per_share"] = info.get("bookValue")
         out["dividend_yield_%"] = pct(info.get("dividendYield"))
         out["profit_margin_%"] = pct(info.get("profitMargins"))
         out["roe_%"] = pct(info.get("returnOnEquity"))
@@ -152,6 +155,8 @@ class EODHDProvider(DataProvider):
 
         out["pe_ratio"] = highlights.get("PERatio")
         out["pb_ratio"] = valuation.get("PriceBookMRQ")
+        out["eps"] = highlights.get("EPS")
+        out["book_value_per_share"] = highlights.get("BookValue")
         dy = highlights.get("DividendYield")
         out["dividend_yield_%"] = round(dy * 100, 2) if isinstance(dy, (int, float)) else None
         pm = highlights.get("ProfitMargin")
