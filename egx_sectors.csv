@@ -1,0 +1,224 @@
+﻿symbol,yahoo_ticker,company_name_en,sector,is_major_exporter
+COMI,COMI.CA,Commercial International Bank Egypt (CIB) S.A.E.,بنوك,False
+TMGH,TMGH.CA,Talaat Moustafa Group Holding,عقاري,False
+SWDY,SWDY.CA,El Sewedy Electric Company,تصنيع,False
+ETEL,ETEL.CA,Telecom Egypt Company,تكنولوجيا,False
+EGAL,EGAL.CA,Egypt Aluminum,تصنيع,True
+MFPC,MFPC.CA,Misr Fertilizer Production Company,تصنيع,True
+QNBE,QNBE.CA,Qatar National Bank Al Ahli,بنوك,False
+EAST,EAST.CA,Eastern Company S.A.E,استهلاكي,False
+ABUK,ABUK.CA,Abu Qir Fertilizers & Chemical Industries,تصنيع,True
+ALCN,ALCN.CA,Alexandria Container & Cargo Handling,تصنيع,False
+ORAS,ORAS.CA,Orascom Construction PLC,تصنيع,False
+EFIH,EFIH.CA,e-finance for Digital and Financial Investments,تكنولوجيا,False
+HDBK,HDBK.CA,Housing and Development Bank Egypt,بنوك,False
+FWRY,FWRY.CA,Fawry for Banking Technology and Electronic Payments,تكنولوجيا,False
+EMFD,EMFD.CA,Emaar Misr for Development,عقاري,False
+SCTS,SCTS.CA,Suez Canal Company for Technology Settling,تكنولوجيا,False
+ADIB,ADIB.CA,Abu Dhabi Islamic Bank Egypt,بنوك,False
+PHDC,PHDC.CA,Palm Hills Developments,عقاري,False
+ORHD,ORHD.CA,Orascom Development Egypt,عقاري,False
+GPPL,GPPL.CA,Golden Pyramids Plaza,عقاري,False
+VLMR,VLMR.CA,Valmore Holding (USD line),مالي غير مصرفي,False
+VLMRA,VLMRA.CA,Valmore Holding (EGP line),مالي غير مصرفي,False
+EFID,EFID.CA,Edita Food Industries,استهلاكي,True
+HRHO,HRHO.CA,EFG Holding Company,مالي غير مصرفي,False
+CANA,CANA.CA,Suez Canal Bank,بنوك,False
+JUFO,JUFO.CA,Juhayna Food Industries,استهلاكي,True
+BTFH,BTFH.CA,Beltone Holding,مالي غير مصرفي,False
+IRON,IRON.CA,Egyptian Iron and Steel Company,تصنيع,False
+RAYA,RAYA.CA,Raya Holding for Financial Investments,تكنولوجيا,False
+FERC,FERC.CA,Ferchem Misr for Fertilizers and Chemicals,تصنيع,False
+EGCH,EGCH.CA,Egyptian Chemical Industries (Kima),تصنيع,True
+CIEB,CIEB.CA,Credit Agricole Egypt Bank,بنوك,False
+FAIT,FAIT.CA,Faisal Islamic Bank of Egypt,بنوك,False
+FAITA,FAITA.CA,Faisal Islamic Bank of Egypt (EGP line),بنوك,False
+GBCO,GBCO.CA,GB Corp (GB Auto),تصنيع,False
+OCDI,OCDI.CA,Sixth of October Development and Investment SODIC,عقاري,False
+HELI,HELI.CA,Heliopolis Co. for Housing & Development,عقاري,False
+VALU,VALU.CA,Valu Consumer Finance,مالي غير مصرفي,False
+EXPA,EXPA.CA,Export Development Bank of Egypt,بنوك,False
+CLHO,CLHO.CA,Cleopatra Hospitals Group,استهلاكي,False
+EGTS,EGTS.CA,Egyptian Resorts Company,عقاري,False
+CCAP,CCAP.CA,QALA For Financial Investments (Qalaa Holdings),مالي غير مصرفي,False
+ARCC,ARCC.CA,Arabian Cement Company,تصنيع,True
+EFIC,EFIC.CA,Egyptian Financial and Industrial SAE,مالي غير مصرفي,False
+SKPC,SKPC.CA,Sidi Kerir Petrochemicals,تصنيع,True
+MCQE,MCQE.CA,Misr Cement (Qena),تصنيع,True
+TAQA,TAQA.CA,TAQA Arabia,تصنيع,False
+POUL,POUL.CA,Cairo Poultry Company,استهلاكي,False
+EGSA,EGSA.CA,Egyptian Satellite Company Nilesat,تكنولوجيا,False
+MTIE,MTIE.CA,MM Group for Industry and International Trade,تكنولوجيا,False
+SCEM,SCEM.CA,Sinai Cement Co.,تصنيع,True
+SAUD,SAUD.CA,alBaraka Bank Egypt,بنوك,False
+ORWE,ORWE.CA,Oriental Weavers Carpets Company,تصنيع,True
+CIRA,CIRA.CA,CIRA Education,استهلاكي,False
+MASR,MASR.CA,Madinet Masr For Housing and Development,عقاري,False
+UBEE,UBEE.CA,The United Bank,بنوك,False
+PHAR,PHAR.CA,Egyptian International Pharmaceutical Industries,استهلاكي,False
+MBSC,MBSC.CA,Misr Beni Suef Cement,تصنيع,True
+MHOT,MHOT.CA,Misr Hotels Company,استهلاكي,False
+CICH,CICH.CA,CI Capital Holding,مالي غير مصرفي,False
+ISPH,ISPH.CA,Ibnsina Pharma,استهلاكي,False
+EGBE,EGBE.CA,Egyptian Gulf Bank,بنوك,False
+TALM,TALM.CA,Taaleem Management Services,استهلاكي,False
+ATQA,ATQA.CA,Misr National Steel - Ataqa,تصنيع,False
+MOIL,MOIL.CA,Maridive and Oil Services,تصنيع,False
+AMOC,AMOC.CA,Alexandria Mineral Oils Company,تصنيع,True
+BINV,BINV.CA,B Investments Holding,عقاري,False
+RMDA,RMDA.CA,Tenth of Ramadan Pharmaceutical (Rameda),استهلاكي,False
+IFAP,IFAP.CA,International Company for Agricultural Crops,استهلاكي,False
+BONY,BONY.CA,Bonyan for Development and Trade,عقاري,False
+CSAG,CSAG.CA,Canal Shipping Agencies Company,تصنيع,False
+OLFI,OLFI.CA,Obour Land for Food Industries,استهلاكي,True
+SPHT,SPHT.CA,El Shams Pyramids Hotels & Touristic Projects,استهلاكي,False
+NIPH,NIPH.CA,El Nile Co. for Pharmaceuticals,استهلاكي,False
+ISMQ,ISMQ.CA,Iron & Steel for Mines & Quarries,تصنيع,False
+MIPH,MIPH.CA,MINAPHARM Pharmaceuticals,استهلاكي,False
+OIH,OIH.CA,Orascom Investment Holding,مالي غير مصرفي,False
+ACAP,ACAP.CA,A Capital Holding,مالي غير مصرفي,False
+SUGR,SUGR.CA,Delta Sugar Company,استهلاكي,False
+EGAS,EGAS.CA,Egypt Gas Company,تصنيع,False
+DOMT,DOMT.CA,Arabian Food Industries (DOMTY),استهلاكي,True
+ELEC,ELEC.CA,Electro Cable Egypt,تصنيع,False
+MOIN,MOIN.CA,Mohandes Insurance Company,مالي غير مصرفي,False
+AMES,AMES.CA,Alexandria New Medical Center,استهلاكي,False
+PRDC,PRDC.CA,Pioneers Properties For Urban Development,عقاري,False
+MPRC,MPRC.CA,Egyptian Media Production City,تكنولوجيا,False
+BIOC,BIOC.CA,GlaxoSmithKline Egypt,استهلاكي,False
+ZMID,ZMID.CA,Zahraa El Maadi Investment and Development,عقاري,False
+NAPR,NAPR.CA,National Printing Company,تصنيع,False
+AXPH,AXPH.CA,Alexandria Co. For Pharmaceuticals & Chemical Industries,استهلاكي,False
+NINH,NINH.CA,Nozha International Hospital,استهلاكي,False
+CNFN,CNFN.CA,Contact Financial Holding,مالي غير مصرفي,False
+GOUR,GOUR.CA,Gourmet Egypt.Com Foods,استهلاكي,False
+CPCI,CPCI.CA,Kahira Pharmaceuticals & Chemical Industries,استهلاكي,False
+SPIN,SPIN.CA,Alexandria Spinning & Weaving Co.,تصنيع,False
+PHTV,PHTV.CA,Pyramisa Hotels & Resorts,عقاري,False
+ENGC,ENGC.CA,Industrial Engineering Company ICON,تصنيع,False
+DSCW,DSCW.CA,Dice For Ready-Made Garments,تصنيع,False
+MFSC,MFSC.CA,Egypt Free Shops Co.,استهلاكي,False
+MPCI,MPCI.CA,Memphis Pharmaceuticals & Chemical Industries,استهلاكي,False
+SVCE,SVCE.CA,South Valley Cement Company,تصنيع,True
+AMIA,AMIA.CA,Arab Moltaqa Investments Company,مالي غير مصرفي,False
+GSSC,GSSC.CA,General Co. For Silos & Storage,تصنيع,False
+OCPH,OCPH.CA,October Pharma,استهلاكي,False
+GDWA,GDWA.CA,Gadwa for Industrial Development,عقاري,False
+MICH,MICH.CA,Misr Chemical Industries Co.,تصنيع,False
+WCDF,WCDF.CA,Middle & West Delta Flour Mills,استهلاكي,False
+SAIB,SAIB.CA,Société Arabe Internationale de Banque,بنوك,False
+KABO,KABO.CA,El-Nasr Clothing & Textiles Co.,تصنيع,False
+UEFM,UEFM.CA,Upper Egypt Mills Company,استهلاكي,False
+UNIT,UNIT.CA,United Co. for Housing & Development,عقاري,False
+ACAMD,ACAMD.CA,Arab Co. for Asset Management and Development,عقاري,False
+ACTF,ACTF.CA,Act Financial,مالي غير مصرفي,False
+ARAB,ARAB.CA,Arab Developers Holding,عقاري,False
+OFH,OFH.CA,O B Financial Holding,مالي غير مصرفي,False
+AJWA,AJWA.CA,AJWA For Food Industries Co. Egypt,استهلاكي,True
+AMER,AMER.CA,Amer Group Holding Company,عقاري,False
+KZPC,KZPC.CA,Kafr El Zayat For Pesticides & Chemicals,تصنيع,False
+ACGC,ACGC.CA,Arabia Cotton Ginning Company,تصنيع,False
+ADCI,ADCI.CA,The Arab Drug Company,استهلاكي,False
+CFGH,CFGH.CA,Concrete Fashion Group,تصنيع,False
+ELSH,ELSH.CA,Al Shams Housing and Urbanization,عقاري,False
+ASCM,ASCM.CA,ASEC Company for Mining ASCOM,تصنيع,False
+AFMC,AFMC.CA,Alexandria Flour Mills,استهلاكي,False
+ISMA,ISMA.CA,Ismailia / Misr Poultry Company,استهلاكي,False
+SDTI,SDTI.CA,SHARM DREAMS Co. for Touristic Investment,مالي غير مصرفي,False
+ELKA,ELKA.CA,Cairo for Housing and Development Company,عقاري,False
+LCSW,LCSW.CA,Lecico Egypt,تصنيع,False
+GGRN,GGRN.CA,Go Green For Agricultural Investment And Development,مالي غير مصرفي,False
+INFI,INFI.CA,Ismailia National Co. for Food Industries,استهلاكي,False
+PHGC,PHGC.CA,Premium Healthcare Group,استهلاكي,False
+SNFC,SNFC.CA,Sharkia National Company for Food Security,استهلاكي,False
+NAHO,NAHO.CA,Naeem Holding Company For Investments,مالي غير مصرفي,False
+EDFM,EDFM.CA,East Delta Flour Mills,استهلاكي,False
+ETRS,ETRS.CA,Egyptian Transport and Commercial Services,تصنيع,False
+SMFR,SMFR.CA,Samad Misr EGYFERT,تصنيع,False
+ATLC,ATLC.CA,Al Tawfeek Leasing Company,مالي غير مصرفي,False
+RACC,RACC.CA,Raya Customer Experience,مالي غير مصرفي,False
+DAPH,DAPH.CA,Development & Engineering Consultants,عقاري,False
+EALR,EALR.CA,Arab Company For Land Reclamation,استهلاكي,False
+ZEOT,ZEOT.CA,Extracted Oil & Derivatives Co.,استهلاكي,False
+ADPC,ADPC.CA,The Arab Dairy Products Co.,استهلاكي,False
+EHDR,EHDR.CA,Egyptians for Housing & Development Co.,عقاري,False
+IDRE,IDRE.CA,Ismailia Development and Real Estate Co,عقاري,False
+MENA,MENA.CA,Mena for Touristic & Real Estate Investment,عقاري,False
+WKOL,WKOL.CA,Wadi Kom Ombo For Land Reclamation Co.,استهلاكي,False
+MOSC,MOSC.CA,Misr Oils & Soap,استهلاكي,False
+MPCO,MPCO.CA,Mansoura Poultry Co.,استهلاكي,False
+ECAP,ECAP.CA,Al Ezz Ceramics & Porcelain Co.,تصنيع,False
+CEFM,CEFM.CA,Middle Egypt Flour Mills,استهلاكي,False
+SCFM,SCFM.CA,South Cairo and Giza Flour Mills and Bakeries,استهلاكي,False
+GPIM,GPIM.CA,GPI for Urban Growth,عقاري,False
+MILS,MILS.CA,North Cairo Flour Mills,استهلاكي,False
+OBRI,OBRI.CA,El-Ebour Co. for Real Estate Investment,مالي غير مصرفي,False
+DEIN,DEIN.CA,Delta Insurance Company,مالي غير مصرفي,False
+CRST,CRST.CA,Creast Mark For Contracting And Real Estate Development,عقاري,False
+AALR,AALR.CA,General Company For Land Reclamation Development & Reconstruction,عقاري,False
+CERA,CERA.CA,The Arab Ceramic Co.,تصنيع,False
+NARE,NARE.CA,Naeem Real Estate Holding Group,مالي غير مصرفي,False
+PRCL,PRCL.CA,General Company for Ceramic and Porcelain Products,تصنيع,False
+NDRL,NDRL.CA,National Drilling Company,تصنيع,False
+ALRA,ALRA.CA,Atlas for Investment & Food Industries,مالي غير مصرفي,False
+ODIN,ODIN.CA,ODIN Investments,مالي غير مصرفي,False
+NCCW,NCCW.CA,Nasr Company for Civil Works,تصنيع,False
+MAAL,MAAL.CA,Marseille Almasreia Alkhalegeya For Holding Investment,مالي غير مصرفي,False
+MEPA,MEPA.CA,Medical Packaging Company,استهلاكي,False
+NHPS,NHPS.CA,National Company for Housing Professional Syndicates,عقاري,False
+ALUM,ALUM.CA,Arab Aluminum Company,تصنيع,False
+SEIGA,SEIGA.CA,Saudi Egyptian Investment & Finance Co. (line A),مالي غير مصرفي,False
+POCO,POCO.CA,Port Said Containers And Cargo Handling Co.,تصنيع,False
+COSG,COSG.CA,Cairo Oil & Soap Company,استهلاكي,False
+AIDC,AIDC.CA,Arabia for Investment and Development,مالي غير مصرفي,False
+UEGC,UEGC.CA,El-Saeed Company for Contracting and Real Estate Investment,مالي غير مصرفي,False
+RTVC,RTVC.CA,Remco Tourism Villages Construction,استهلاكي,False
+SEIG,SEIG.CA,Saudi Egyptian Investment & Finance Co.,مالي غير مصرفي,False
+EBSC,EBSC.CA,Osool ESB Securities Brokerage,مالي غير مصرفي,False
+PRMH,PRMH.CA,Prime Holding,مالي غير مصرفي,False
+SIPC,SIPC.CA,Sabaa International Pharmaceutical and Chemical Industry,استهلاكي,False
+GGCC,GGCC.CA,Giza General - Contracting and Real Estate Investment,مالي غير مصرفي,False
+RREI,RREI.CA,Arab Real Estate Investment Co.,مالي غير مصرفي,False
+CAED,CAED.CA,Cairo Educational Services,استهلاكي,False
+GTEX,GTEX.CA,GTEX for Commercial and Industrial Investments,مالي غير مصرفي,False
+APSW,APSW.CA,Unirab Polvara Spinning & Weaving Co.,تصنيع,False
+AFDI,AFDI.CA,Al Ahly for Development & Investment,مالي غير مصرفي,False
+MEGM,MEGM.CA,Middle East Glass Manufacturing Company,تصنيع,False
+ICLE,ICLE.CA,International Company for Leasing,مالي غير مصرفي,False
+ARVA,ARVA.CA,Arab Valves Company,تصنيع,False
+ANFI,ANFI.CA,Tycoon Holding Company For Financial Investments,مالي غير مصرفي,False
+TANM,TANM.CA,Tanmiya For Real Estate Investment,مالي غير مصرفي,False
+MCRO,MCRO.CA,Macro Group Pharmaceuticals (Macro Capital),مالي غير مصرفي,False
+MOED,MOED.CA,Egyptian Modern Education Systems,استهلاكي,False
+DTPP,DTPP.CA,Delta Co. For Printing & Packaging,تصنيع,False
+KRDI,KRDI.CA,AlKhair River for Development Agricultural Investment,مالي غير مصرفي,False
+GTWL,GTWL.CA,Golden Textiles & Clothes Wool,تصنيع,False
+RAKT,RAKT.CA,Rakta Paper Manufacturing Company,تصنيع,False
+SPMD,SPMD.CA,Speed Medical Co,استهلاكي,False
+UNIP,UNIP.CA,Universal For Paper and Packaging Materials,تصنيع,False
+RUBX,RUBX.CA,Rubex International for Plastic and Acrylic Manufacturing,تصنيع,False
+ROTO,ROTO.CA,Rowad Tourism Company,استهلاكي,False
+KWIN,KWIN.CA,El Kahera El Watania Investment,مالي غير مصرفي,False
+ASPI,ASPI.CA,Aspire Capital Holding for Financial Investments,مالي غير مصرفي,False
+ICID,ICID.CA,International Co. For Investment & Development,مالي غير مصرفي,False
+AIHC,AIHC.CA,Arabia Investments Holding,مالي غير مصرفي,False
+AREH,AREH.CA,Real Estate Egyptian Consortium,عقاري,False
+EEII,EEII.CA,Arab Engineering Industries,تصنيع,False
+CCRS,CCRS.CA,Gulf Canadian Company for Arab Real Estate Investment,مالي غير مصرفي,False
+EASB,EASB.CA,Egyptian Arabian Company (Themar) for Securities Brokerage,مالي غير مصرفي,False
+GRCA,GRCA.CA,Grand Capital for Financial Investments,مالي غير مصرفي,False
+EPCO,EPCO.CA,Egypt for Poultry,استهلاكي,False
+ELWA,ELWA.CA,El Wadi for International and Investment Development,مالي غير مصرفي,False
+LUTS,LUTS.CA,Lotus Agri Capital,مالي غير مصرفي,False
+ELNA,ELNA.CA,El Nasr Manufacturing Agricultural Crops,استهلاكي,False
+DGTZ,DGTZ.CA,Digitize for Investment And Technology,تكنولوجيا,False
+GIHD,GIHD.CA,Gharbia Islamic Housing Development Company,عقاري,False
+DCCC,DCCC.CA,Damietta Container & Cargo Handling Co.,تصنيع,False
+NEDA,NEDA.CA,Northern Upper Egypt For Development & Agricultural Production,عقاري,False
+TRTO,TRTO.CA,Trans Oceans Tours,استهلاكي,False
+MMAT,MMAT.CA,Marsa Alam For Tourism Development,عقاري,False
+EPPK,EPPK.CA,El Ahram Co. For Printing And Packaging,تصنيع,False
+GMCI,GMCI.CA,GMC Group For Industrial Commercial & Financial Investments,مالي غير مصرفي,False
+EOSB,EOSB.CA,El Orouba Securities Brokerage,مالي غير مصرفي,False
+CPME,CPME.CA,Catalyst Partners,مالي غير مصرفي,False
+COPR,COPR.CA,Copper for Commercial Investment & Real Estate Development,مالي غير مصرفي,False
