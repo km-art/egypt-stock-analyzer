@@ -105,6 +105,23 @@ with col2:
 
 filtered = df[(df["short_term_score"] >= min_short) & (df["long_term_score"] >= min_long)]
 
+st.markdown("##### 🏢 فلتر القطاع والسيولة")
+scol1, scol2 = st.columns(2)
+with scol1:
+    if "sector" in filtered.columns:
+        available_sectors = sorted(filtered["sector"].dropna().unique().tolist())
+        selected_sectors = st.multiselect("القطاع (اختر واحد أو أكتر - سيبه فاضي لعرض الكل)",
+                                           options=available_sectors, default=[])
+    else:
+        selected_sectors = []
+with scol2:
+    liquidity_filter = st.checkbox("متوسط قيمة التداول اليومي فوق 3 مليون جنيه فقط", value=False)
+
+if selected_sectors:
+    filtered = filtered[filtered["sector"].isin(selected_sectors)]
+if "meets_liquidity_min" in filtered.columns and liquidity_filter:
+    filtered = filtered[filtered["meets_liquidity_min"] == True]
+
 st.markdown("##### 📐 فلاتر قاعدة جراهام (المستثمر الدفاعي)")
 gcol1, gcol2 = st.columns(2)
 with gcol1:
