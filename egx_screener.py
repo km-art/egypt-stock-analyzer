@@ -273,13 +273,23 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
         result["long_term_score"] = round(0.5 * long_score + 0.5 * fund_score, 1)
 
         # --- قاعدة جراهام للسعر العادل ---
-        graham = compute_graham(
-            eps=fundamentals.get("eps"),
-            bvps=fundamentals.get("book_value_per_share"),
-            price=last_price,
-        )
-        result.update(graham)
+        # Yahoo Finance غالباً مش بيرجع trailingEps/bookValue مباشرة لمعظم أسهم EGX.
+        # كحل بديل، نشتقهم رياضياً من P/E وP/B (المتوفرين بشكل أوسع):
+        #   EPS  = السعر ÷ P/E
+        #   BVPS = السعر ÷ P/B
+        eps = fundamentals.get("eps")
+        bvps = fundamentals.get("book_value_per_share")
+
         pe = fundamentals.get("pe_ratio")
+        pb = fundamentals.get("pb_ratio")
+
+        if eps is None and pe is not None and pe > 0:
+            eps = last_price / pe
+        if bvps is None and pb is not None and pb > 0:
+            bvps = last_price / pb
+
+        graham = compute_graham(eps=eps, bvps=bvps, price=last_price)
+        result.update(graham)
         result["pe_below_15"] = (pe is not None and 0 < pe < 15)
     else:
         result["long_term_score"] = long_score
