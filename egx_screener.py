@@ -184,7 +184,17 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
     rsi = compute_rsi(close)
     macd_line, signal_line, hist = compute_macd(close)
 
-    last_price = float(close.iloc[-1])
+    last_price = float(close.iloc[-1])  # افتراضياً: آخر إغلاق يومي متاح من السلسلة التاريخية
+    price_is_live = False
+
+    # نحاول نجيب سعر أقرب للحظي (delayed quote) بدل الاكتفاء بآخر إغلاق يومي.
+    # لو مش متاح (المزود مش بيدعمها أو فشل الطلب)، بنفضل مستخدمين آخر إغلاق
+    # يومي عادي - مفيش تأثير سلبي، بس مفيش تحسين.
+    live = provider.get_live_price(ticker)
+    if live.get("is_live") and live.get("price"):
+        last_price = float(live["price"])
+        price_is_live = True
+
     last_rsi = float(rsi.iloc[-1])
     last_sma20 = float(sma20.iloc[-1])
     last_sma50 = float(sma50.iloc[-1])
@@ -252,6 +262,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
         "sector": sector_info.get("sector", "غير مصنف"),
         "is_major_exporter": sector_info.get("is_major_exporter", False),
         "price": round(last_price, 2),
+        "price_is_live": price_is_live,
         "rsi": round(last_rsi, 1),
         "macd_hist": round(last_hist, 3),
         "above_sma20": last_price > last_sma20,
