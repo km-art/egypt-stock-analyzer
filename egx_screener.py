@@ -272,6 +272,10 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
         result["fundamental_score"] = fund_score
         result["long_term_score"] = round(0.5 * long_score + 0.5 * fund_score, 1)
 
+        # لو كل قيم fundamentals رجعت None، يبقى المصدر رفض/حظر الطلب - مش إن
+        # الشركة مالهاش بيانات فعلاً. نسجل ده صراحة عشان الواجهة تقدر تنبّهك.
+        result["fundamentals_fetched"] = any(v is not None for v in fundamentals.values())
+
         # --- قاعدة جراهام للسعر العادل ---
         # Yahoo Finance غالباً مش بيرجع trailingEps/bookValue مباشرة لمعظم أسهم EGX.
         # كحل بديل، نشتقهم رياضياً من P/E وP/B (المتوفرين بشكل أوسع):
