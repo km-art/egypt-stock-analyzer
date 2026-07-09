@@ -58,6 +58,14 @@ provider_choice = st.sidebar.radio(
     }[x],
 )
 
+if provider_choice == "yahoo":
+    st.sidebar.warning(
+        "⚠️ بيانات Yahoo المالية (P/E، P/B، EPS...) لأسهم EGX أحياناً بتكون "
+        "**قديمة أو غير دقيقة**، مش بس ناقصة. قبل ما تعتمد على رقم جراهام أو "
+        "P/E لأي قرار، قارنه يدوياً بمصدر تاني زي investing.com أو الموقع "
+        "الرسمي للشركة."
+    )
+
 provider_kwargs = {}
 if provider_choice == "eodhd":
     api_key = st.sidebar.text_input("EODHD API Key", type="password")
@@ -65,6 +73,10 @@ if provider_choice == "eodhd":
 elif provider_choice == "csv":
     data_dir = st.sidebar.text_input("مسار مجلد البيانات", value="./egx_data")
     provider_kwargs = {"data_dir": data_dir}
+    st.sidebar.caption(
+        "💡 دي أدق طريقة فعلياً: تدخل EPS وBVPS يدوياً من investing.com أو "
+        "التقرير المالي الرسمي لكل سهم تهتم بيه في fundamentals.csv."
+    )
 
 run_button = st.sidebar.button("🔄 شغّل التحليل الآن", type="primary")
 
@@ -139,6 +151,12 @@ if "meets_liquidity_min" in filtered.columns and liquidity_filter:
     filtered = filtered[filtered["meets_liquidity_min"] == True]
 
 st.markdown("##### 📐 فلاتر قاعدة جراهام (المستثمر الدفاعي)")
+if provider_choice == "yahoo":
+    st.caption(
+        "⚠️ EPS وBVPS المستخدمين هنا جايين من Yahoo (أو مُشتقين من P/E و P/B "
+        "بتوعه). لو عمود `eps_estimated` أو `bvps_estimated` بـ True لسهم معين، "
+        "يبقى الرقم تقريبي وممكن يكون غير دقيق - راجعه يدوياً قبل أي قرار."
+    )
 gcol1, gcol2 = st.columns(2)
 with gcol1:
     graham_pe_filter = st.checkbox("مكرر ربحية (P/E) أقل من 15 فقط", value=False)
