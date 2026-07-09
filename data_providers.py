@@ -80,7 +80,15 @@ class YahooProvider(DataProvider):
         out = _empty_fundamentals()
         try:
             info = self._yf.Ticker(ticker).info
-        except Exception:
+        except Exception as e:
+            print(f"⚠️  Yahoo: فشل استدعاء .info لـ {ticker}: {type(e).__name__}: {e}")
+            return out
+
+        # لو info رجعت فاضية أو شبه فاضية (مفتاح أو اتنين بس زي 'trailingPegRatio')
+        # ده مؤشر قوي إن Yahoo رفض/حظر الطلب (شائع من عناوين IP سحابية)، مش إن
+        # الشركة نفسها مالهاش بيانات
+        if not info or len(info) < 5:
+            print(f"⚠️  Yahoo: استجابة فارغة/مقتضبة لـ {ticker} - على الأغلب رفض مؤقت من المصدر (rate limit).")
             return out
 
         def pct(x):
