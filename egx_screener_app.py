@@ -171,11 +171,25 @@ if "undervalued_per_graham" in filtered.columns and graham_undervalued_filter:
 # ---------------------------------------------------------------------------
 # عرض النتائج في تبويبات
 # ---------------------------------------------------------------------------
+if "price_is_live" in df.columns:
+    live_ratio = df["price_is_live"].mean()
+    if live_ratio > 0:
+        st.caption(
+            f"🕐 عمود `price_is_live`: True = سعر شبه لحظي (delayed quote حسب "
+            f"سياسة المصدر، مش لحظي 100%)، False = آخر إغلاق يومي متاح. "
+            f"حالياً {live_ratio:.0%} من الأسهم عندها سعر شبه لحظي."
+        )
+    else:
+        st.caption(
+            "🕐 كل الأسعار المعروضة هي **آخر إغلاق يومي** متاح (مش لحظية) - "
+            "السعر شبه اللحظي مش متاح دلوقتي من المصدر المختار."
+        )
+
 tab1, tab2, tab3 = st.tabs(["📊 المدى القصير", "📈 المدى الطويل + المالي", "🗂 كل البيانات والمؤشرات"])
 
 with tab1:
     st.subheader("أفضل الأسهم للمدى القصير")
-    short_cols = ["ticker", "price", "rsi", "macd_hist", "above_sma20", "short_term_score"]
+    short_cols = ["ticker", "price", "price_is_live", "rsi", "macd_hist", "above_sma20", "short_term_score"]
     st.dataframe(
         filtered.sort_values("short_term_score", ascending=False)[short_cols],
         use_container_width=True,
@@ -188,7 +202,7 @@ with tab1:
 
 with tab2:
     st.subheader("أفضل الأسهم للمدى الطويل (فني + مالي شامل)")
-    long_cols = ["ticker", "price", "ret_1y_%", "volatility_%", "long_term_score"]
+    long_cols = ["ticker", "price", "price_is_live", "ret_1y_%", "volatility_%", "long_term_score"]
     if include_fundamentals:
         # إضافة المؤشرات الجديدة للجدول للمدى الطويل
         long_cols += ["pe_ratio", "pb_ratio", "dividend_yield_%", "profit_margin_%", "roe_%",
