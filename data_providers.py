@@ -39,6 +39,17 @@ class DataProvider(ABC):
         """
         raise NotImplementedError
 
+    def get_live_price(self, ticker: str) -> dict:
+        """
+        اختياري (مش إجباري على كل مزود). يرجع dict فيه:
+        {"price": float | None, "is_live": bool, "quote_time": str | None}
+
+        الهدف: سعر أقرب للحظي (delayed quote) منفصل عن سلسلة الأسعار اليومية
+        التاريخية المستخدمة في حساب المؤشرات الفنية. لو المزود مش بيدعمها،
+        الافتراضي بيرجع is_live=False عشان الكود اللي بيستخدمها يعرف يرجع
+        لآخر إغلاق يومي بدل ما يفشل.
+        """
+        return {"price": None, "is_live": False, "quote_time": None}
 
 FUNDAMENTAL_KEYS = [
     "pe_ratio", "pb_ratio", "dividend_yield_%", "profit_margin_%",
@@ -75,6 +86,23 @@ class YahooProvider(DataProvider):
             return pd.DataFrame()
         df = df.rename(columns=str.title)
         return df[["Open", "High", "Low", "Close", "Volume"]]
+
+    def get_live_price(self, ticker: str) -> dict:
+        """
+        بيحاول يجيب سعر أقرب للحظي عبر fast_info (أسرع وأخف من .info الكامل).
+        مهم: ده "delayed quote" حسب سياسة Yahoo نفسها (عادة 15-20 دقيقة تأخير
+        للبورصات الكبرى، وممكن يكون أكتر أو غير مدعوم أصلاً لبورصات زي EGX) -
+        مش سعر لحظي مضمون 100%. لو مش متاح، بيرجع is_live=False وتفضل الأداة
+        تستخدم آخر إغلاق يومي بدل ما تفشل.
+        """
+        try:
+            fast = self._yf.Ticker(ticker).fast_info
+            price = fast.get("last_price") if hasattr(fast, "get") else getattr(fast, "last_price", None)
+            if price is not None and price > 0:
+                return {"price": float(price), "is_live": True, "quote_time": None}
+        except Exception as e:
+            print(f"⚠️  Yahoo: فشل جلب السعر شبه اللحظي لـ {ticker}: {type(e).__name__}: {e}")
+        return {"price": None, "is_live": False, "quote_time": None}
 
     def get_fundamentals(self, ticker: str) -> dict:
         out = _empty_fundamentals()
