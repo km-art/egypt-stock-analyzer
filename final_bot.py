@@ -208,6 +208,92 @@ def calculate_indicators(df):
     return df
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_fundamentals(ticker: str) -> dict:
+    """
+    يجلب أهم البيانات المالية الأساسية للسهم (P/E, ROE, هامش الربح...).
+    Cache لمدة 10 دقايق لأن استدعاء .info أبطأ وأتقل بكتير من بيانات الأسعار،
+    ومحتاج نقلل الطلبات المتكررة عليه قد الإمكان.
+    """
+    empty = {
+        "pe_ratio": None, "pb_ratio": None, "roe_%": None,
+        "profit_margin_%": None, "debt_to_equity": None,
+        "dividend_yield_%": None, "revenue_growth_%": None,
+    }
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception:
+        return empty
+
+    # استجابة فاضية/مقتضبة = رفض مؤقت من المصدر (rate limit)، مش إن السهم
+    # مالوش بيانات فعلاً - نتعامل معاها زي بيانات ناقصة عادية
+    if not info or len(info) < 5:
+        return empty
+
+    def pct(x):
+        return round(x * 100, 2) if isinstance(x, (int, float)) else None
+
+    return {
+        "pe_ratio": info.get("trailingPE"),
+        "pb_ratio": info.get("priceToBook"),
+        "roe_%": pct(info.get("returnOnEquity")),
+        "profit_margin_%": pct(info.get("profitMargins")),
+        "debt_to_equity": info.get("debtToEquity"),
+        "dividend_yield_%": pct(info.get("dividendYield")),
+        "revenue_growth_%": pct(info.get("revenueGrowth")),
+    }
+
+
+def score_fundamentals(f: dict) -> int:
+    """
+    درجة مالية (0-100) تعكس الصحة المالية للشركة، بنفس منطق أداة EGX Screener.
+    لو بند معين مش متاح، بيتم تجاهله بدل ما يأثر سلباً على الدرجة (عشان
+    شركة بيانات ناقصة متتظلمش بدرجة واطية ظلماً).
+    """
+    score = 50
+
+    pe = f.get("pe_ratio")
+    if pe is not None and pe > 0:
+        if pe < 12:
+            score += 10
+        elif pe > 25:
+            score -= 10
+
+    pm = f.get("profit_margin_%")
+    if pm is not None:
+        if pm > 15:
+            score += 10
+        elif pm < 0:
+            score -= 15
+
+    roe = f.get("roe_%")
+    if roe is not None:
+        if roe > 15:
+            score += 10
+        elif roe < 5:
+            score -= 5
+
+    dte = f.get("debt_to_equity")
+    if dte is not None:
+        if dte < 50:
+            score += 5
+        elif dte > 150:
+            score -= 10
+
+    dy = f.get("dividend_yield_%")
+    if dy is not None and dy > 5:
+        score += 5
+
+    rg = f.get("revenue_growth_%")
+    if rg is not None:
+        if rg > 10:
+            score += 10
+        elif rg < 0:
+            score -= 10
+
+    return max(0, min(100, score))
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_single_stock(ticker: str, period: str = "100d"):
     """تحميل بيانات سهم واحد مع تخزين مؤقت (cache) لمدة 5 دقايق لتقليل الطلبات المكررة."""
@@ -324,7 +410,27 @@ with tab1:
                     c2.metric("مؤشر الزخم RSI", f"{rsi:.1f}")
                     c3.metric("مؤشر السيولة MFI", f"{mfi:.1f}")
                     c4.metric("حجم تداول اليوم (فوليوم)", f"{vol:,.0f}")
-                    
+
+                    # --- التحليل المالي الأساسي ---
+                    fundamentals = fetch_fundamentals(ticker_input)
+                    fund_score = score_fundamentals(fundamentals)
+
+                    st.markdown("##### 💰 التحليل المالي الأساسي")
+                    f1, f2, f3, f4 = st.columns(4)
+                    pe_display = f"{fundamentals['pe_ratio']:.2f}" if fundamentals.get("pe_ratio") else "غير متاح"
+                    roe_display = f"{fundamentals['roe_%']:.1f}%" if fundamentals.get("roe_%") is not None else "غير متاح"
+                    pm_display = f"{fundamentals['profit_margin_%']:.1f}%" if fundamentals.get("profit_margin_%") is not None else "غير متاح"
+                    f1.metric("مكرر الربحية P/E", pe_display)
+                    f2.metric("العائد على حقوق الملكية ROE", roe_display)
+                    f3.metric("هامش الربح", pm_display)
+                    f4.metric("الدرجة المالية (من 100)", fund_score)
+
+                    if not any(v is not None for v in fundamentals.values()):
+                        st.caption(
+                            "⚠️ البيانات المالية رجعت فاضية - على الأغلب Yahoo Finance رافض/حاظر "
+                            "الطلبات المالية مؤقتاً (مشكلة معروفة مع yfinance). التحليل الفني فوق مش متأثر."
+                        )
+
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=df.index, y=df['Close'].squeeze(), name='سعر الإغلاق', line=dict(color='#1f77b4', width=2)))
                     fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'].squeeze(), name='EMA 9', line=dict(color='#2ca02c', dash='dot')))
@@ -336,7 +442,11 @@ with tab1:
 
 with tab2:
     st.subheader("📊 الفرز والترتيب المتقدم لأسهم السوق")
-    
+    include_fundamentals_scan = st.checkbox(
+        "💰 تضمين التحليل المالي الأساسي (P/E, ROE, هامش الربح...) - أبطأ بكتير لأنه بيجيب بيانات إضافية لكل سهم",
+        value=False,
+    )
+
     if st.button("تشغيل الفرز والترتيب الاحترافي اللحظي 🚀"):
         fresh_cross_results = []
         bottom_accumulation_results = []
@@ -436,6 +546,18 @@ with tab2:
                             short_term_trading.append(data_entry)
                         else:
                             data_entry["التقييم الفني"] = f"{status} [استثمار مستقر]"
+                            # التحليل المالي منطقي أكتر هنا تحديداً (فئة الاستثمار
+                            # طويل الأجل)، فبنجيبه بس للأسهم اللي وصلت للفئة دي -
+                            # بدل ما نجيبه لكل الـ 230 سهم ونبطّئ المسح من غير داعي
+                            if include_fundamentals_scan:
+                                fundamentals = fetch_fundamentals(ticker)
+                                fund_score = score_fundamentals(fundamentals)
+                                combined_score = round(0.6 * momentum_score + 0.4 * fund_score, 1)
+                                data_entry["الدرجة المالية (من 100)"] = fund_score
+                                data_entry["مكرر الربحية P/E"] = (
+                                    round(fundamentals["pe_ratio"], 2) if fundamentals.get("pe_ratio") else None
+                                )
+                                data_entry["الدرجة الشاملة (فني+مالي)"] = combined_score
                             long_term_investment.append(data_entry)
                 except Exception as e:
                     skipped_count += 1
@@ -461,7 +583,9 @@ with tab2:
                 
             if long_term_investment:
                 # ترتيب واختيار أعلى 5 أسهم استثمار
-                top_inv = pd.DataFrame(long_term_investment).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False).head(5) # تم التعديل لـ 5
+                _lt_df = pd.DataFrame(long_term_investment)
+                _sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in _lt_df.columns else "النقاط الفنية والسيولة (من 100)"
+                top_inv = _lt_df.sort_values(by=_sort_col, ascending=False).head(5) # تم التعديل لـ 5
                 telegram_msg += "📈 *أقوى أسهم الاتجاه الصاعد المستقر:*\n"
                 for _, row_inv in top_inv.iterrows():
                     telegram_msg += f"- {row_inv['اسم الشركة']} | السعر: {row_inv['السعر الحالي (ج.م)']} ج.م | النقاط: {row_inv['النقاط الفنية والسيولة (من 100)']}\n"
@@ -510,4 +634,11 @@ with tab2:
             
             st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر (طويل الأجل وآمن)")
             if long_term_investment:
-                st.dataframe(pd.DataFrame(long_term_investment).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False), use_container_width=True)
+                lt_df = pd.DataFrame(long_term_investment)
+                sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة (من 100)"
+                st.dataframe(lt_df.sort_values(by=sort_col, ascending=False), use_container_width=True)
+                if include_fundamentals_scan:
+                    st.caption(
+                        "💡 مرتبة حسب 'الدرجة الشاملة' = 60% فني + 40% مالي. "
+                        "لو عمود مكرر الربحية P/E فاضي لسهم معين، يبقى Yahoo مارجعش بيانات مالية له."
+                    )
