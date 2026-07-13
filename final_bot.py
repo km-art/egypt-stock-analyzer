@@ -219,6 +219,7 @@ def fetch_fundamentals(ticker: str) -> dict:
         "pe_ratio": None, "pb_ratio": None, "roe_%": None,
         "profit_margin_%": None, "debt_to_equity": None,
         "dividend_yield_%": None, "revenue_growth_%": None,
+        "eps": None, "book_value_per_share": None,
     }
     try:
         info = yf.Ticker(ticker).info
@@ -241,7 +242,61 @@ def fetch_fundamentals(ticker: str) -> dict:
         "debt_to_equity": info.get("debtToEquity"),
         "dividend_yield_%": pct(info.get("dividendYield")),
         "revenue_growth_%": pct(info.get("revenueGrowth")),
+        "eps": info.get("trailingEps"),
+        "book_value_per_share": info.get("bookValue"),
     }
+
+
+def compute_graham(eps, bvps, price):
+    """
+    يحسب "رقم جراهام" (Graham Number) - السعر العادل الأقصى حسب معايير
+    المستثمر الدفاعي لبنجامين جراهام:
+
+        رقم جراهام = √(22.5 × EPS × BVPS)
+
+    الرقم 22.5 = 15 (أقصى P/E مقبول) × 1.5 (أقصى P/B مقبول). محتاجة EPS
+    موجب وBVPS موجب عشان الصيغة تكون منطقية (شركة رابحة بقيمة دفترية موجبة).
+    """
+    if eps is None or bvps is None or eps <= 0 or bvps <= 0:
+        return {"graham_number": None, "graham_upside_%": None, "undervalued_per_graham": None}
+
+    graham_number = (22.5 * eps * bvps) ** 0.5
+    upside_pct = round((graham_number / price - 1) * 100, 1) if price else None
+    return {
+        "graham_number": round(graham_number, 2),
+        "graham_upside_%": upside_pct,
+        "undervalued_per_graham": price < graham_number,
+    }
+
+
+def graham_from_fundamentals(fundamentals: dict, price: float) -> dict:
+    """
+    يحسب رقم جراهام من dict الأساسيات، مع اشتقاق EPS/BVPS من P/E و P/B
+    كحل بديل لو Yahoo مارجعش القيمتين مباشرة (شائع جداً لأسهم EGX).
+    بيرجع dict فيه graham_number/graham_upside_%/undervalued_per_graham
+    بالإضافة لـ eps وbvps المستخدمين فعلياً وعلامة estimated لكل واحد.
+    """
+    eps = fundamentals.get("eps")
+    bvps = fundamentals.get("book_value_per_share")
+    eps_estimated = False
+    bvps_estimated = False
+
+    pe = fundamentals.get("pe_ratio")
+    pb = fundamentals.get("pb_ratio")
+
+    if eps is None and pe is not None and pe > 0:
+        eps = price / pe
+        eps_estimated = True
+    if bvps is None and pb is not None and pb > 0:
+        bvps = price / pb
+        bvps_estimated = True
+
+    result = compute_graham(eps=eps, bvps=bvps, price=price)
+    result["eps"] = round(eps, 3) if eps is not None else None
+    result["book_value_per_share"] = round(bvps, 3) if bvps is not None else None
+    result["eps_estimated"] = eps_estimated
+    result["bvps_estimated"] = bvps_estimated
+    return result
 
 
 def score_fundamentals(f: dict) -> int:
@@ -431,6 +486,28 @@ with tab1:
                             "الطلبات المالية مؤقتاً (مشكلة معروفة مع yfinance). التحليل الفني فوق مش متأثر."
                         )
 
+                    # --- قاعدة جراهام للسعر العادل ---
+                    graham = graham_from_fundamentals(fundamentals, price)
+                    st.markdown("##### 📐 قاعدة جراهام (المستثمر الدفاعي)")
+                    g1, g2, g3 = st.columns(3)
+                    graham_display = f"{graham['graham_number']:.2f} ج.م" if graham["graham_number"] else "غير متاح"
+                    upside_display = f"{graham['graham_upside_%']:+.1f}%" if graham["graham_upside_%"] is not None else "—"
+                    verdict_display = (
+                        "✅ تحت السعر العادل" if graham["undervalued_per_graham"] is True
+                        else "❌ فوق السعر العادل" if graham["undervalued_per_graham"] is False
+                        else "غير متاح"
+                    )
+                    g1.metric("رقم جراهام (السعر العادل)", graham_display)
+                    g2.metric("الفرق عن السعر الحالي", upside_display)
+                    g3.metric("الحكم", verdict_display)
+
+                    if graham["eps_estimated"] or graham["bvps_estimated"]:
+                        st.caption(
+                            "⚠️ EPS و/أو BVPS المستخدمين هنا **مُشتقين تقريبياً** من P/E و P/B "
+                            "(Yahoo مارجعش القيم الفعلية مباشرة) - راجعهم يدوياً من investing.com "
+                            "قبل أي قرار."
+                        )
+
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=df.index, y=df['Close'].squeeze(), name='سعر الإغلاق', line=dict(color='#1f77b4', width=2)))
                     fig.add_trace(go.Scatter(x=df.index, y=df['EMA9'].squeeze(), name='EMA 9', line=dict(color='#2ca02c', dash='dot')))
@@ -443,7 +520,8 @@ with tab1:
 with tab2:
     st.subheader("📊 الفرز والترتيب المتقدم لأسهم السوق")
     include_fundamentals_scan = st.checkbox(
-        "💰 تضمين التحليل المالي الأساسي (P/E, ROE, هامش الربح...) - أبطأ بكتير لأنه بيجيب بيانات إضافية لكل سهم",
+        "💰 تضمين التحليل المالي الأساسي + رقم جراهام (P/E, ROE, السعر العادل...) - "
+        "أبطأ بكتير لأنه بيجيب بيانات إضافية لكل سهم",
         value=False,
     )
 
@@ -558,6 +636,11 @@ with tab2:
                                     round(fundamentals["pe_ratio"], 2) if fundamentals.get("pe_ratio") else None
                                 )
                                 data_entry["الدرجة الشاملة (فني+مالي)"] = combined_score
+
+                                graham = graham_from_fundamentals(fundamentals, p)
+                                data_entry["رقم جراهام"] = graham["graham_number"]
+                                data_entry["فرق جراهام %"] = graham["graham_upside_%"]
+                                data_entry["تحت السعر العادل؟"] = graham["undervalued_per_graham"]
                             long_term_investment.append(data_entry)
                 except Exception as e:
                     skipped_count += 1
