@@ -609,6 +609,24 @@ with tab2:
                         "متوسط فوليوم 10أيام": f"{vol_ma10:,.0f}",
                         "التقييم الفني": status
                     }
+
+                    # التحليل المالي + جراهام بيتحسبوا مرة واحدة هنا وبيتطبقوا على
+                    # الأربع فئات كلها (مش بس فئة الاستثمار المستقر) - عشان تقدر
+                    # تشوف الجانب المالي حتى لأسهم المضاربة السريعة أو القيعان
+                    if include_fundamentals_scan:
+                        fundamentals = fetch_fundamentals(ticker)
+                        fund_score = score_fundamentals(fundamentals)
+                        combined_score = round(0.6 * momentum_score + 0.4 * fund_score, 1)
+                        data_entry["الدرجة المالية (من 100)"] = fund_score
+                        data_entry["مكرر الربحية P/E"] = (
+                            round(fundamentals["pe_ratio"], 2) if fundamentals.get("pe_ratio") else None
+                        )
+                        data_entry["الدرجة الشاملة (فني+مالي)"] = combined_score
+
+                        graham = graham_from_fundamentals(fundamentals, p)
+                        data_entry["رقم جراهام"] = graham["graham_number"]
+                        data_entry["فرق جراهام %"] = graham["graham_upside_%"]
+                        data_entry["تحت السعر العادل؟"] = graham["undervalued_per_graham"]
                     
                     if is_new_cross and r < 52:
                         data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد طازة)"
@@ -624,23 +642,6 @@ with tab2:
                             short_term_trading.append(data_entry)
                         else:
                             data_entry["التقييم الفني"] = f"{status} [استثمار مستقر]"
-                            # التحليل المالي منطقي أكتر هنا تحديداً (فئة الاستثمار
-                            # طويل الأجل)، فبنجيبه بس للأسهم اللي وصلت للفئة دي -
-                            # بدل ما نجيبه لكل الـ 230 سهم ونبطّئ المسح من غير داعي
-                            if include_fundamentals_scan:
-                                fundamentals = fetch_fundamentals(ticker)
-                                fund_score = score_fundamentals(fundamentals)
-                                combined_score = round(0.6 * momentum_score + 0.4 * fund_score, 1)
-                                data_entry["الدرجة المالية (من 100)"] = fund_score
-                                data_entry["مكرر الربحية P/E"] = (
-                                    round(fundamentals["pe_ratio"], 2) if fundamentals.get("pe_ratio") else None
-                                )
-                                data_entry["الدرجة الشاملة (فني+مالي)"] = combined_score
-
-                                graham = graham_from_fundamentals(fundamentals, p)
-                                data_entry["رقم جراهام"] = graham["graham_number"]
-                                data_entry["فرق جراهام %"] = graham["graham_upside_%"]
-                                data_entry["تحت السعر العادل؟"] = graham["undervalued_per_graham"]
                             long_term_investment.append(data_entry)
                 except Exception as e:
                     skipped_count += 1
