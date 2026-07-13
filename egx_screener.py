@@ -5,31 +5,43 @@ import pandas as pd
 from data_providers import get_provider
 
 # ---------------------------------------------------------------------------
-# 1) قائمة الأسهم: بتتحمّل تلقائياً من egx_all_listed_stocks.csv (223 سهم مدرج
-#    فعلياً في EGX). لازم الملف يكون في نفس المجلد. لو مش موجود، نرجع لقائمة
-#    احتياطية مختصرة عشان الكود ميكسرش.
+# 1) قائمة الأسهم: مكتوبة مباشرة هنا في الكود (223 سهم مدرج فعلياً في EGX)
+#    بدل ما تتحمّل من ملف CSV خارجي - عشان الكود يشتغل بمفرده من غير ما
+#    تحتاج ترفع ملف إضافي منفصل مع كل نشر. لو عايز تضيف/تشيل سهم، عدّل
+#    القائمة دي مباشرة.
 # ---------------------------------------------------------------------------
-_TICKERS_CSV_PATH = "egx_all_listed_stocks.csv"
-_SECTORS_CSV_PATH = "egx_sectors.csv"
-
-_FALLBACK_TICKERS = [
-    "COMI.CA", "HRHO.CA", "TMGH.CA", "SWDY.CA", "EAST.CA",
-    "ETEL.CA", "ORWE.CA", "ABUK.CA", "SKPC.CA", "EFIH.CA",
-    "ORAS.CA", "AMOC.CA", "MFPC.CA", "PHDC.CA", "EKHO.CA",
-    "JUFO.CA", "FWRY.CA", "ISPH.CA",
+EGX_TICKERS = [
+    "COMI.CA", "TMGH.CA", "SWDY.CA", "ETEL.CA", "EGAL.CA", "MFPC.CA", "QNBE.CA", "EAST.CA",
+    "ABUK.CA", "ALCN.CA", "ORAS.CA", "EFIH.CA", "HDBK.CA", "FWRY.CA", "EMFD.CA", "SCTS.CA",
+    "ADIB.CA", "PHDC.CA", "ORHD.CA", "GPPL.CA", "VLMR.CA", "VLMRA.CA", "EFID.CA", "HRHO.CA",
+    "CANA.CA", "JUFO.CA", "BTFH.CA", "IRON.CA", "RAYA.CA", "FERC.CA", "EGCH.CA", "CIEB.CA",
+    "FAIT.CA", "FAITA.CA", "GBCO.CA", "OCDI.CA", "HELI.CA", "VALU.CA", "EXPA.CA", "CLHO.CA",
+    "EGTS.CA", "CCAP.CA", "ARCC.CA", "EFIC.CA", "SKPC.CA", "MCQE.CA", "TAQA.CA", "POUL.CA",
+    "EGSA.CA", "MTIE.CA", "SCEM.CA", "SAUD.CA", "ORWE.CA", "CIRA.CA", "MASR.CA", "UBEE.CA",
+    "PHAR.CA", "MBSC.CA", "MHOT.CA", "CICH.CA", "ISPH.CA", "EGBE.CA", "TALM.CA", "ATQA.CA",
+    "MOIL.CA", "AMOC.CA", "BINV.CA", "RMDA.CA", "IFAP.CA", "BONY.CA", "CSAG.CA", "OLFI.CA",
+    "SPHT.CA", "NIPH.CA", "ISMQ.CA", "MIPH.CA", "OIH.CA", "ACAP.CA", "SUGR.CA", "EGAS.CA",
+    "DOMT.CA", "ELEC.CA", "MOIN.CA", "AMES.CA", "PRDC.CA", "MPRC.CA", "BIOC.CA", "ZMID.CA",
+    "NAPR.CA", "AXPH.CA", "NINH.CA", "CNFN.CA", "GOUR.CA", "CPCI.CA", "SPIN.CA", "PHTV.CA",
+    "ENGC.CA", "DSCW.CA", "MFSC.CA", "MPCI.CA", "SVCE.CA", "AMIA.CA", "GSSC.CA", "OCPH.CA",
+    "GDWA.CA", "MICH.CA", "WCDF.CA", "SAIB.CA", "KABO.CA", "UEFM.CA", "UNIT.CA", "ACAMD.CA",
+    "ACTF.CA", "ARAB.CA", "OFH.CA", "AJWA.CA", "AMER.CA", "KZPC.CA", "ACGC.CA", "ADCI.CA",
+    "CFGH.CA", "ELSH.CA", "ASCM.CA", "AFMC.CA", "ISMA.CA", "SDTI.CA", "ELKA.CA", "LCSW.CA",
+    "GGRN.CA", "INFI.CA", "PHGC.CA", "SNFC.CA", "NAHO.CA", "EDFM.CA", "ETRS.CA", "SMFR.CA",
+    "ATLC.CA", "RACC.CA", "DAPH.CA", "EALR.CA", "ZEOT.CA", "ADPC.CA", "EHDR.CA", "IDRE.CA",
+    "MENA.CA", "WKOL.CA", "MOSC.CA", "MPCO.CA", "ECAP.CA", "CEFM.CA", "SCFM.CA", "GPIM.CA",
+    "MILS.CA", "OBRI.CA", "DEIN.CA", "CRST.CA", "AALR.CA", "CERA.CA", "NARE.CA", "PRCL.CA",
+    "NDRL.CA", "ALRA.CA", "ODIN.CA", "NCCW.CA", "MAAL.CA", "MEPA.CA", "NHPS.CA", "ALUM.CA",
+    "SEIGA.CA", "POCO.CA", "COSG.CA", "AIDC.CA", "UEGC.CA", "RTVC.CA", "SEIG.CA", "EBSC.CA",
+    "PRMH.CA", "SIPC.CA", "GGCC.CA", "RREI.CA", "CAED.CA", "GTEX.CA", "APSW.CA", "AFDI.CA",
+    "MEGM.CA", "ICLE.CA", "ARVA.CA", "ANFI.CA", "TANM.CA", "MCRO.CA", "MOED.CA", "DTPP.CA",
+    "KRDI.CA", "GTWL.CA", "RAKT.CA", "SPMD.CA", "UNIP.CA", "RUBX.CA", "ROTO.CA", "KWIN.CA",
+    "ASPI.CA", "ICID.CA", "AIHC.CA", "AREH.CA", "EEII.CA", "CCRS.CA", "EASB.CA", "GRCA.CA",
+    "EPCO.CA", "ELWA.CA", "LUTS.CA", "ELNA.CA", "DGTZ.CA", "GIHD.CA", "DCCC.CA", "NEDA.CA",
+    "TRTO.CA", "MMAT.CA", "EPPK.CA", "GMCI.CA", "EOSB.CA", "CPME.CA", "COPR.CA",
 ]
 
-
-def load_egx_tickers(csv_path: str = _TICKERS_CSV_PATH) -> list[str]:
-    """يحمّل قائمة كل الأسهم المدرجة من egx_all_listed_stocks.csv."""
-    try:
-        df = pd.read_csv(csv_path)
-        tickers = df["yahoo_ticker"].dropna().unique().tolist()
-        if tickers:
-            return tickers
-    except Exception as e:
-        print(f"⚠️  تعذر تحميل {csv_path} ({e}). هيتم استخدام قائمة احتياطية مختصرة.")
-    return _FALLBACK_TICKERS
+_SECTORS_CSV_PATH = "egx_sectors.csv"
 
 
 def load_egx_sectors(csv_path: str = _SECTORS_CSV_PATH) -> dict:
@@ -52,7 +64,6 @@ def load_egx_sectors(csv_path: str = _SECTORS_CSV_PATH) -> dict:
         return {}
 
 
-EGX_TICKERS = load_egx_tickers()
 EGX_SECTORS = load_egx_sectors()
 
 HISTORY_DAYS = 365 + 30
