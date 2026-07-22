@@ -100,7 +100,6 @@ else:  # الإماراتية
         "ADCB.AD": "بنوك", "ADNOCDIST.AD": "طاقة"
     }
 
-# ترتيب الأسهم حسب الرمز
 ALL_STOCKS = dict(sorted(ALL_STOCKS.items(), key=lambda kv: kv[1]))
 
 def send_telegram_alert(message):
@@ -337,7 +336,6 @@ with tab1:
                     c3.metric("مؤشر السيولة MFI", f"{mfi:.1f}")
                     c4.metric("حجم تداول اليوم", f"{vol:,.0f}")
 
-                    # التحليل المالي الأساسي
                     fundamentals = fetch_fundamentals(ticker_input)
                     fund_score = score_fundamentals(fundamentals)
 
@@ -351,7 +349,6 @@ with tab1:
                     f3.metric("هامش الربح", pm_display)
                     f4.metric("الدرجة المالية (من 100)", fund_score)
 
-                    # قاعدة جراهام
                     graham = graham_from_fundamentals(fundamentals, price)
                     st.markdown("##### 📐 قاعدة جراهام للسعر العادل")
                     g1, g2, g3 = st.columns(3)
@@ -499,13 +496,12 @@ with tab2:
                         if vol_today > (vol_ma10 * 1.15) and 50 <= r <= 78:
                             short_term_trading.append(data_entry)
                         else:
-                       [cite: 1]    long_term_investment.append(data_entry)
+                            long_term_investment.append(data_entry)
                 except Exception:
                     continue
             
             st.success("تم الانتهاء من فحص السوق بنجاح! 🦅")
             
-            # عرض الجداول
             st.markdown("### 🚀 أولاً: أسهم إشارة تأسيس المركز (قاع صاعد طازة)")
             if fresh_cross_results:
                 st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية (من 100)", ascending=False), use_container_width=True)
@@ -527,3 +523,5 @@ with tab2:
             st.markdown("### 📈 رابعاً: أسهم الاتجاه الصاعد المستقر")
             if long_term_investment:
                 st.dataframe(pd.DataFrame(long_term_investment), use_container_width=True)
+            else:
+                st.info("لا توجد أسهم ضمن الاتجاه الصاعد المستقر حالياً.")
