@@ -7,15 +7,15 @@ import requests
 import numpy as np
 
 # إعدادات الصفحة والمظهر العام
-st.set_page_config(page_title="قناص الأسواق العالمية 💹", layout="wide")
+st.set_page_config(page_title="قناص البورصة العالمية الاحترافي 🌍📈", layout="wide")
 
-st.title("🦅 قناص الأسواق العالمية (مصر - أمريكا - عملات مشفرة)")
-st.write("تحليل فني ومالي متكامل للأسهم المصرية والأمريكية والعملات المشفرة مع نظام إنذار تليجرام")
+st.title("🦅 قناص البورصة العالمية (مصر - أمريكا - الإمارات)")
+st.write("تم تقفيل الكود بمعايير صارمة: إضافة حد أدنى للفوليوم لحجب الأسهم الميتة، وفلاتر حماية من التضخم الحاد.")
 
 # إعدادات عامة قابلة للتعديل
-BATCH_SIZE = 30
-BATCH_DELAY = 1.5
-CROSS_LOOKBACK = 3
+BATCH_SIZE = 30       # عدد الأسهم في كل طلب تحميل
+BATCH_DELAY = 1.5     # ثواني انتظار بين كل دفعة
+CROSS_LOOKBACK = 3    # كام يوم نرجع بيهم للخلف لاكتشاف "تقاطع جديد"
 
 # القراءة التلقائية من Streamlit Secrets
 try:
@@ -31,6 +31,9 @@ TELEGRAM_TOKEN = st.sidebar.text_input("أدخل Token البوت:", value=defau
 TELEGRAM_CHAT_ID = st.sidebar.text_input("أدخل Chat ID الخاص بك:", value=default_chat_id)
 
 def send_telegram_alert(message):
+    """
+    يرسل رسالة عبر تليجرام ويرجع (نجح: bool, رسالة الحالة: str)
+    """
     token = TELEGRAM_TOKEN if TELEGRAM_TOKEN else default_token
     chat_id = TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else default_chat_id
 
@@ -50,213 +53,9 @@ def send_telegram_alert(message):
         return False, f"خطأ في الاتصال بتليجرام: {e}"
 
 # ============================================================
-# جلب قائمة S&P 500 تلقائياً
+# الأسهم المصرية (EGX) - القائمة الكاملة
 # ============================================================
-@st.cache_data(ttl=86400)
-def get_sp500_tickers():
-    """
-    جلب قائمة أسهم S&P 500 من مصادر متعددة
-    """
-    # المحاولة 1: استخدام CSV من GitHub
-    try:
-        url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
-        df = pd.read_csv(url)
-        if not df.empty:
-            tickers = df['Symbol'].tolist()
-            names = df['Name'].tolist()
-            tickers = [t.replace('.', '-') for t in tickers]
-            
-            sp500_dict = {}
-            for name, ticker in zip(names, tickers):
-                if len(name) > 35:
-                    name = name[:32] + "..."
-                sp500_dict[f"{name} ({ticker})"] = ticker
-            return sp500_dict
-    except Exception:
-        pass
-    
-    # المحاولة 2: استخدام Wikipedia
-    try:
-        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        tables = pd.read_html(url)
-        sp500_table = tables[0]
-        tickers = sp500_table['Symbol'].tolist()
-        names = sp500_table['Security'].tolist()
-        tickers = [t.replace('.', '-') for t in tickers]
-        
-        sp500_dict = {}
-        for name, ticker in zip(names, tickers):
-            if len(name) > 35:
-                name = name[:32] + "..."
-            sp500_dict[f"{name} ({ticker})"] = ticker
-        return sp500_dict
-    except Exception:
-        pass
-    
-    # قائمة احتياطية (أهم 100 سهم)
-    return get_fallback_us_stocks()
-
-def get_fallback_us_stocks():
-    """قائمة احتياطية للأسهم الأمريكية"""
-    return {
-        "Apple Inc. (AAPL)": "AAPL",
-        "Microsoft (MSFT)": "MSFT",
-        "Amazon (AMZN)": "AMZN",
-        "Google (GOOGL)": "GOOGL",
-        "Meta (META)": "META",
-        "Tesla (TSLA)": "TSLA",
-        "NVIDIA (NVDA)": "NVDA",
-        "Berkshire (BRK-B)": "BRK-B",
-        "Johnson & Johnson (JNJ)": "JNJ",
-        "Visa (V)": "V",
-        "Procter & Gamble (PG)": "PG",
-        "JPMorgan Chase (JPM)": "JPM",
-        "UnitedHealth (UNH)": "UNH",
-        "Home Depot (HD)": "HD",
-        "Walmart (WMT)": "WMT",
-        "Mastercard (MA)": "MA",
-        "Coca-Cola (KO)": "KO",
-        "PepsiCo (PEP)": "PEP",
-        "Cisco (CSCO)": "CSCO",
-        "Intel (INTC)": "INTC",
-        "IBM (IBM)": "IBM",
-        "Netflix (NFLX)": "NFLX",
-        "PayPal (PYPL)": "PYPL",
-        "Adobe (ADBE)": "ADBE",
-        "Salesforce (CRM)": "CRM",
-        "Oracle (ORCL)": "ORCL",
-        "Caterpillar (CAT)": "CAT",
-        "Boeing (BA)": "BA",
-        "McDonald's (MCD)": "MCD",
-        "Disney (DIS)": "DIS",
-        "Nike (NKE)": "NKE",
-        "Starbucks (SBUX)": "SBUX",
-        "Costco (COST)": "COST",
-        "Chevron (CVX)": "CVX",
-        "Exxon Mobil (XOM)": "XOM",
-        "Abbott Labs (ABT)": "ABT",
-        "AbbVie (ABBV)": "ABBV",
-        "Eli Lilly (LLY)": "LLY",
-        "Pfizer (PFE)": "PFE",
-        "Merck (MRK)": "MRK",
-        "Amgen (AMGN)": "AMGN",
-        "Gilead (GILD)": "GILD",
-        "Moderna (MRNA)": "MRNA",
-        "Broadcom (AVGO)": "AVGO",
-        "Texas Instruments (TXN)": "TXN",
-        "Qualcomm (QCOM)": "QCOM",
-        "AMD (AMD)": "AMD",
-        "Micron (MU)": "MU",
-        "ASML (ASML)": "ASML",
-        "Taiwan Semi (TSM)": "TSM",
-        "SAP (SAP)": "SAP",
-        "Accenture (ACN)": "ACN",
-        "Dell (DELL)": "DELL",
-        "HP (HPQ)": "HPQ",
-        "Uber (UBER)": "UBER",
-        "Airbnb (ABNB)": "ABNB",
-        "Booking (BKNG)": "BKNG",
-        "American Express (AXP)": "AXP",
-        "Goldman Sachs (GS)": "GS",
-        "Morgan Stanley (MS)": "MS",
-        "Bank of America (BAC)": "BAC",
-        "Wells Fargo (WFC)": "WFC",
-        "Citigroup (C)": "C",
-        "BlackRock (BLK)": "BLK",
-        "S&P Global (SPGI)": "SPGI",
-        "Moody's (MCO)": "MCO",
-        "Linde (LIN)": "LIN",
-        "3M (MMM)": "MMM",
-        "Honeywell (HON)": "HON",
-        "GE (GE)": "GE",
-        "Lockheed Martin (LMT)": "LMT",
-        "Raytheon (RTX)": "RTX",
-        "General Dynamics (GD)": "GD",
-        "Northrop (NOC)": "NOC",
-        "Aon (AON)": "AON",
-        "Marsh (MMC)": "MMC",
-        "AFLAC (AFL)": "AFL",
-        "Prudential (PRU)": "PRU",
-        "MetLife (MET)": "MET",
-        "Allstate (ALL)": "ALL",
-        "Travelers (TRV)": "TRV",
-        "Chubb (CB)": "CB",
-        "Progressive (PGR)": "PGR",
-        "PNC (PNC)": "PNC",
-        "Truist (TFC)": "TFC",
-        "US Bancorp (USB)": "USB",
-        "State Street (STT)": "STT",
-        "Bank of NY Mellon (BK)": "BK",
-        "CME (CME)": "CME",
-        "Intercontinental (ICE)": "ICE",
-        "Nasdaq (NDAQ)": "NDAQ",
-        "Garmin (GRMN)": "GRMN",
-        "Corning (GLW)": "GLW",
-        "Amphenol (APH)": "APH",
-        "Keysight (KEYS)": "KEYS",
-        "CDW (CDW)": "CDW",
-        "Cognizant (CTSH)": "CTSH",
-        "EPAM (EPAM)": "EPAM",
-        "Sherwin-Williams (SHW)": "SHW",
-        "Deere (DE)": "DE",
-        "Cummins (CMI)": "CMI",
-        "Parker-Hannifin (PH)": "PH",
-        "Emerson (EMR)": "EMR",
-        "Illinois Tool (ITW)": "ITW",
-        "Autozone (AZO)": "AZO",
-        "O'Reilly (ORLY)": "ORLY",
-        "TJX (TJX)": "TJX",
-        "Lowe's (LOW)": "LOW",
-        "Target (TGT)": "TGT",
-        "Dollar General (DG)": "DG",
-        "Ross Stores (ROST)": "ROST",
-        "T-Mobile (TMUS)": "TMUS",
-        "Verizon (VZ)": "VZ",
-        "AT&T (T)": "T",
-        "Comcast (CMCSA)": "CMCSA",
-        "Charter (CHTR)": "CHTR",
-    }
-
-# ============================================================
-# العملات المشفرة
-# ============================================================
-CRYPTO_STOCKS = {
-    "Bitcoin (BTC)": "BTC-USD",
-    "Ethereum (ETH)": "ETH-USD",
-    "Tether (USDT)": "USDT-USD",
-    "BNB (Binance Coin)": "BNB-USD",
-    "Solana (SOL)": "SOL-USD",
-    "Ripple (XRP)": "XRP-USD",
-    "Cardano (ADA)": "ADA-USD",
-    "Dogecoin (DOGE)": "DOGE-USD",
-    "Toncoin (TON)": "TON-USD",
-    "Chainlink (LINK)": "LINK-USD",
-    "Polkadot (DOT)": "DOT-USD",
-    "Polygon (MATIC)": "MATIC-USD",
-    "Shiba Inu (SHIB)": "SHIB-USD",
-    "Litecoin (LTC)": "LTC-USD",
-    "Bitcoin Cash (BCH)": "BCH-USD",
-    "Uniswap (UNI)": "UNI-USD",
-    "Avalanche (AVAX)": "AVAX-USD",
-    "Cosmos (ATOM)": "ATOM-USD",
-    "Ethereum Classic (ETC)": "ETC-USD",
-    "Stellar (XLM)": "XLM-USD",
-    "Monero (XMR)": "XMR-USD",
-    "Algorand (ALGO)": "ALGO-USD",
-    "VeChain (VET)": "VET-USD",
-    "Filecoin (FIL)": "FIL-USD",
-    "Hedera (HBAR)": "HBAR-USD",
-    "Aptos (APT)": "APT-USD",
-    "Sui (SUI)": "SUI-USD",
-    "Pepe (PEPE)": "PEPE-USD",
-    "Internet Computer (ICP)": "ICP-USD",
-    "Mantle (MNT)": "MNT-USD",
-}
-
-# ============================================================
-# الأسهم المصرية (القائمة الكاملة)
-# ============================================================
-ALL_EGX_STOCKS = {
+EGX_STOCKS = {
     "A Capital Holding": "ACAP.CA", "AJWA For Food Industries Co. Egypt": "AJWA.CA",
     "ASEC Company for Mining ASCOM": "ASCM.CA", "Act Financial": "ACTF.CA",
     "Al Ahly for Development & Investment": "AFDI.CA", "Al Tawfeek Leasing Company": "ATLC.CA",
@@ -374,12 +173,203 @@ ALL_EGX_STOCKS = {
     "مطاحن مصر الوسطى": "CEFM.CA", "مطاحن ومخابز شمال القاهرة": "MNSF.CA",
 }
 
-# نرتب حسب رمز السهم
-ALL_EGX_STOCKS = dict(sorted(ALL_EGX_STOCKS.items(), key=lambda kv: kv[1]))
+# ============================================================
+# الأسهم الأمريكية (US) - أشهر الشركات
+# ============================================================
+US_STOCKS = {
+    "Apple Inc.": "AAPL",
+    "Microsoft Corporation": "MSFT",
+    "Amazon.com Inc.": "AMZN",
+    "Alphabet Inc. (Google)": "GOOGL",
+    "Meta Platforms Inc.": "META",
+    "Tesla Inc.": "TSLA",
+    "NVIDIA Corporation": "NVDA",
+    "Berkshire Hathaway": "BRK-B",
+    "Johnson & Johnson": "JNJ",
+    "Visa Inc.": "V",
+    "Procter & Gamble": "PG",
+    "JPMorgan Chase": "JPM",
+    "UnitedHealth Group": "UNH",
+    "Home Depot": "HD",
+    "Walmart Inc.": "WMT",
+    "Mastercard Inc.": "MA",
+    "Coca-Cola Company": "KO",
+    "PepsiCo Inc.": "PEP",
+    "Cisco Systems": "CSCO",
+    "Intel Corporation": "INTC",
+    "IBM": "IBM",
+    "Netflix Inc.": "NFLX",
+    "PayPal Holdings": "PYPL",
+    "Adobe Inc.": "ADBE",
+    "Salesforce Inc.": "CRM",
+    "Oracle Corporation": "ORCL",
+    "Caterpillar Inc.": "CAT",
+    "Boeing Company": "BA",
+    "McDonald's Corporation": "MCD",
+    "Disney (Walt) Co.": "DIS",
+    "Nike Inc.": "NKE",
+    "Starbucks Corporation": "SBUX",
+    "Costco Wholesale": "COST",
+    "Chevron Corporation": "CVX",
+    "Exxon Mobil": "XOM",
+    "Philip Morris": "PM",
+    "Altria Group": "MO",
+    "Abbott Laboratories": "ABT",
+    "AbbVie Inc.": "ABBV",
+    "Eli Lilly": "LLY",
+    "Pfizer Inc.": "PFE",
+    "Merck & Co.": "MRK",
+    "Amgen Inc.": "AMGN",
+    "Gilead Sciences": "GILD",
+    "Biogen Inc.": "BIIB",
+    "Moderna Inc.": "MRNA",
+    "Broadcom Inc.": "AVGO",
+    "Texas Instruments": "TXN",
+    "Qualcomm Inc.": "QCOM",
+    "Advanced Micro Devices": "AMD",
+    "Micron Technology": "MU",
+    "Applied Materials": "AMAT",
+    "Lam Research": "LRCX",
+    "KLA Corporation": "KLAC",
+    "ASML Holding": "ASML",
+    "Taiwan Semiconductor": "TSM",
+    "SAP SE": "SAP",
+    "Accenture plc": "ACN",
+    "Dell Technologies": "DELL",
+    "HP Inc.": "HPQ",
+    "CrowdStrike Holdings": "CRWD",
+    "Palo Alto Networks": "PANW",
+    "Fortinet Inc.": "FTNT",
+    "ServiceNow Inc.": "NOW",
+    "Workday Inc.": "WDAY",
+    "Datadog Inc.": "DDOG",
+    "Snowflake Inc.": "SNOW",
+    "Uber Technologies": "UBER",
+    "Lyft Inc.": "LYFT",
+    "Airbnb Inc.": "ABNB",
+    "Booking Holdings": "BKNG",
+    "Expedia Group": "EXPE",
+    "Marriott International": "MAR",
+    "Hilton Worldwide": "HLT",
+    "American Express": "AXP",
+    "Goldman Sachs": "GS",
+    "Morgan Stanley": "MS",
+    "Bank of America": "BAC",
+    "Wells Fargo": "WFC",
+    "Citigroup Inc.": "C",
+    "BlackRock Inc.": "BLK",
+    "Fidelity National": "FIS",
+    "Fiserv Inc.": "FISV",
+    "S&P Global": "SPGI",
+    "Moody's Corporation": "MCO",
+    "MSCI Inc.": "MSCI",
+}
 
 # ============================================================
-# تصنيف القطاعات
+# الأسهم الإماراتية (UAE) - أسواق دبي وأبوظبي
 # ============================================================
+UAE_STOCKS = {
+    # أبوظبي (ADX)
+    "First Abu Dhabi Bank": "FAB.AD",
+    "Abu Dhabi Commercial Bank": "ADCB.AD",
+    "Abu Dhabi Islamic Bank": "ADIB.AD",
+    "Emirates NBD Bank": "EMIRATES.AD",
+    "Mashreq Bank": "MASQ.AD",
+    "Aldar Properties": "ALDAR.AD",
+    "Emaar Properties": "EMAAR.AD",
+    "DAMAC Properties": "DAMAC.AD",
+    "RAK Properties": "RAKPROP.AD",
+    "Manazel Real Estate": "MANAZEL.AD",
+    "Abu Dhabi National Oil Co. (ADNOC)": "ADNOC.AD",
+    "ADNOC Distribution": "ADNOCDIST.AD",
+    "ADNOC Drilling": "ADNOCDRILL.AD",
+    "ADNOC Gas": "ADNOCGAS.AD",
+    "Abu Dhabi National Energy Co. (TAQA)": "TAQA.AD",
+    "Abu Dhabi Ports Company": "ADPORTS.AD",
+    "Etihad Aviation Group": "ETIHAD.AD",
+    "Abu Dhabi National Hotels": "ADNH.AD",
+    "Abu Dhabi National Company for Building Materials": "BILDCO.AD",
+    "Abu Dhabi Ship Building": "ADSB.AD",
+    "Agility Public Warehousing": "AGILITY.AD",
+    "Al Ain Holding": "AINHOLD.AD",
+    "Al Ghurair Group": "GHURAIR.AD",
+    "Al Seer Marine": "ALSEER.AD",
+    "Alpha Dhabi Holding": "ALPHADHABI.AD",
+    "AMG International": "AMG.AD",
+    "Arkan Building Materials": "ARKAN.AD",
+    "Bayan Investment": "BAYAN.AD",
+    "Borosil Glass": "BOROSIL.AD",
+    "Burjeel Holdings": "BURJEEL.AD",
+    "Dana Gas": "DANA.AD",
+    "Dubai Islamic Bank": "DIB.AD",
+    "Emirates Islamic Bank": "EIB.AD",
+    "Emirates Insurance": "EIC.AD",
+    "Emirates Integrated Telecommunications (du)": "DU.AD",
+    "Emirates Telecommunications (Etisalat)": "ETISALAT.AD",
+    "Energy Holding": "ENERGY.AD",
+    "Eshraq Investments": "ESHRAQ.AD",
+    "Fertiglobe": "FERTIGLB.AD",
+    "Foodco Holding": "FOODCO.AD",
+    "Gulf Cement Company": "GCC.AD",
+    "Gulf Medical Projects": "GMP.AD",
+    "International Holdings Co. (IHC)": "IHC.AD",
+    "Invest Bank": "INVESTB.AD",
+    "National Bank of Umm Al Quwain": "NBQ.AD",
+    "National Cement Company": "NCC.AD",
+    "National Marine Dredging Company": "NMDC.AD",
+    "Palms Sports": "PALMS.AD",
+    "Phoenix Group": "PHOENIX.AD",
+    "Q Holding": "QHOLDING.AD",
+    "Ras Al Khaimah Cement": "RAKC.AD",
+    "Ras Al Khaimah National Bank": "RAKBNK.AD",
+    "Response Plus Holding": "RPM.AD",
+    "Salik Company": "SALIK.AD",
+    "Sharjah Cement": "SHARJAH.AD",
+    "Sharjah Islamic Bank": "SIB.AD",
+    "Sirocom": "SIRO.AD",
+    "Umm Al Quwain Cement": "UQC.AD",
+    "United Arab Bank": "UAB.AD",
+    "Waha Capital": "WAHA.AD",
+    # دبي (DFM)
+    "Dubai Financial Market": "DFM.DU",
+    "Emaar Development": "EMAARDEV.DU",
+    "Emaar Malls": "EMAARMALLS.DU",
+    "Arabtec Holding": "ARABTEC.DU",
+    "Deyaar Development": "DEYAAR.DU",
+    "Union Properties": "UPP.DU",
+    "TABREED (Emirates District Cooling)": "TABREED.DU",
+    "Dusit Thani Dubai": "DUSIT.DU",
+    "Gulf Navigation Holding": "GULFNAV.DU",
+    "Aramex International": "ARMX.DU",
+    "Air Arabia": "AIRA.DU",
+    "Dubai Investments": "DINV.DU",
+    "National Central Cooling Co. (Tabreed)": "TABREED.DU",
+    "Dubai Parks and Resorts": "DPR.DU",
+    "Meraas Holding": "MERAAS.DU",
+    "Meydan Group": "MEYDAN.DU",
+    "Nakheel Group": "NAKHEEL.DU",
+    "Wasl Properties": "WASL.DU",
+    "Mashreq Bank (Dubai)": "MASQ.DU",
+    "Commercial Bank of Dubai": "CBD.DU",
+    "Emirates NBD (Dubai)": "ENBD.DU",
+    "Union National Bank": "UNB.DU",
+    "National Bank of Ras Al Khaimah": "RAKBANK.DU",
+    "Gulf Bank (UAE)": "GULFBANK.DU",
+    "Ajman Bank": "AJMANBANK.DU",
+    "Fujairah National Bank": "FNB.DU",
+    "Ras Al Khaimah National Insurance": "RAKNIC.DU",
+    "Al Buhaira National Insurance": "ABNIC.DU",
+    "Dubai National Insurance": "DNIC.DU",
+    "Takaful Emarat": "TAKAFUL.DU",
+}
+
+# دمج جميع الأسهم في قاموس واحد مع تصنيف السوق
+ALL_STOCKS = {}
+ALL_STOCKS.update(EGX_STOCKS)
+ALL_STOCKS.update({f"{k} (US)": v for k, v in US_STOCKS.items()})
+ALL_STOCKS.update({f"{k} (UAE)": v for k, v in UAE_STOCKS.items()})
+
+# تصنيف قطاعي لكل سهم (مصري + أمريكي + إماراتي)
 TICKER_SECTOR = {
     # الأسهم المصرية
     "COMI.CA": "بنوك", "TMGH.CA": "عقاري", "SWDY.CA": "تصنيع", "ETEL.CA": "تكنولوجيا",
@@ -438,35 +428,61 @@ TICKER_SECTOR = {
     "DGTZ.CA": "تكنولوجيا", "GIHD.CA": "عقاري", "DCCC.CA": "تصنيع", "NEDA.CA": "عقاري",
     "TRTO.CA": "استهلاكي", "MMAT.CA": "عقاري", "EPPK.CA": "تصنيع", "GMCI.CA": "مالي غير مصرفي",
     "EOSB.CA": "مالي غير مصرفي", "CPME.CA": "مالي غير مصرفي", "COPR.CA": "مالي غير مصرفي",
+    
+    # الأسهم الأمريكية
+    "AAPL": "تكنولوجيا", "MSFT": "تكنولوجيا", "AMZN": "استهلاكي", "GOOGL": "تكنولوجيا",
+    "META": "تكنولوجيا", "TSLA": "استهلاكي", "NVDA": "تكنولوجيا", "BRK-B": "مالي",
+    "JNJ": "صحي", "V": "مالي", "PG": "استهلاكي", "JPM": "مالي",
+    "UNH": "صحي", "HD": "استهلاكي", "WMT": "استهلاكي", "MA": "مالي",
+    "KO": "استهلاكي", "PEP": "استهلاكي", "CSCO": "تكنولوجيا", "INTC": "تكنولوجيا",
+    "IBM": "تكنولوجيا", "NFLX": "تكنولوجيا", "PYPL": "مالي", "ADBE": "تكنولوجيا",
+    "CRM": "تكنولوجيا", "ORCL": "تكنولوجيا", "CAT": "صناعي", "BA": "صناعي",
+    "MCD": "استهلاكي", "DIS": "تكنولوجيا", "NKE": "استهلاكي", "SBUX": "استهلاكي",
+    "COST": "استهلاكي", "CVX": "طاقة", "XOM": "طاقة", "PM": "استهلاكي",
+    "MO": "استهلاكي", "ABT": "صحي", "ABBV": "صحي", "LLY": "صحي",
+    "PFE": "صحي", "MRK": "صحي", "AMGN": "صحي", "GILD": "صحي",
+    "BIIB": "صحي", "MRNA": "صحي", "AVGO": "تكنولوجيا", "TXN": "تكنولوجيا",
+    "QCOM": "تكنولوجيا", "AMD": "تكنولوجيا", "MU": "تكنولوجيا", "AMAT": "تكنولوجيا",
+    "LRCX": "تكنولوجيا", "KLAC": "تكنولوجيا", "ASML": "تكنولوجيا", "TSM": "تكنولوجيا",
+    "SAP": "تكنولوجيا", "ACN": "تكنولوجيا", "DELL": "تكنولوجيا", "HPQ": "تكنولوجيا",
+    "CRWD": "تكنولوجيا", "PANW": "تكنولوجيا", "FTNT": "تكنولوجيا", "NOW": "تكنولوجيا",
+    "WDAY": "تكنولوجيا", "DDOG": "تكنولوجيا", "SNOW": "تكنولوجيا", "UBER": "تكنولوجيا",
+    "LYFT": "تكنولوجيا", "ABNB": "استهلاكي", "BKNG": "استهلاكي", "EXPE": "استهلاكي",
+    "MAR": "استهلاكي", "HLT": "استهلاكي", "AXP": "مالي", "GS": "مالي",
+    "MS": "مالي", "BAC": "مالي", "WFC": "مالي", "C": "مالي",
+    "BLK": "مالي", "FIS": "مالي", "FISV": "مالي", "SPGI": "مالي",
+    "MCO": "مالي", "MSCI": "مالي",
+    
+    # الأسهم الإماراتية
+    "FAB.AD": "بنوك", "ADCB.AD": "بنوك", "ADIB.AD": "بنوك", "EMIRATES.AD": "بنوك",
+    "MASQ.AD": "بنوك", "ALDAR.AD": "عقاري", "EMAAR.AD": "عقاري", "DAMAC.AD": "عقاري",
+    "RAKPROP.AD": "عقاري", "MANAZEL.AD": "عقاري", "ADNOC.AD": "طاقة", "ADNOCDIST.AD": "طاقة",
+    "ADNOCDRILL.AD": "طاقة", "ADNOCGAS.AD": "طاقة", "TAQA.AD": "طاقة", "ADPORTS.AD": "صناعي",
+    "ETIHAD.AD": "صناعي", "ADNH.AD": "استهلاكي", "BILDCO.AD": "تصنيع", "ADSB.AD": "صناعي",
+    "AGILITY.AD": "صناعي", "AINHOLD.AD": "مالي", "GHURAIR.AD": "مالي", "ALSEER.AD": "صناعي",
+    "ALPHADHABI.AD": "مالي", "AMG.AD": "مالي", "ARKAN.AD": "تصنيع", "BAYAN.AD": "مالي",
+    "BOROSIL.AD": "تصنيع", "BURJEEL.AD": "صحي", "DANA.AD": "طاقة", "DIB.AD": "بنوك",
+    "EIB.AD": "بنوك", "EIC.AD": "مالي", "DU.AD": "تكنولوجيا", "ETISALAT.AD": "تكنولوجيا",
+    "ENERGY.AD": "طاقة", "ESHRAQ.AD": "مالي", "FERTIGLB.AD": "تصنيع", "FOODCO.AD": "استهلاكي",
+    "GCC.AD": "تصنيع", "GMP.AD": "صحي", "IHC.AD": "مالي", "INVESTB.AD": "مالي",
+    "NBQ.AD": "بنوك", "NCC.AD": "تصنيع", "NMDC.AD": "صناعي", "PALMS.AD": "استهلاكي",
+    "PHOENIX.AD": "مالي", "QHOLDING.AD": "مالي", "RAKC.AD": "تصنيع", "RAKBNK.AD": "بنوك",
+    "RPM.AD": "صحي", "SALIK.AD": "صناعي", "SHARJAH.AD": "تصنيع", "SIB.AD": "بنوك",
+    "SIRO.AD": "تكنولوجيا", "UQC.AD": "تصنيع", "UAB.AD": "بنوك", "WAHA.AD": "مالي",
+    "DFM.DU": "مالي", "EMAARDEV.DU": "عقاري", "EMAARMALLS.DU": "عقاري", "ARABTEC.DU": "تصنيع",
+    "DEYAAR.DU": "عقاري", "UPP.DU": "عقاري", "TABREED.DU": "طاقة", "DUSIT.DU": "استهلاكي",
+    "GULFNAV.DU": "صناعي", "ARMX.DU": "صناعي", "AIRA.DU": "صناعي", "DINV.DU": "مالي",
+    "DPR.DU": "استهلاكي", "MERAAS.DU": "عقاري", "MEYDAN.DU": "استهلاكي", "NAKHEEL.DU": "عقاري",
+    "WASL.DU": "عقاري", "MASQ.DU": "بنوك", "CBD.DU": "بنوك", "ENBD.DU": "بنوك",
+    "UNB.DU": "بنوك", "RAKBANK.DU": "بنوك", "GULFBANK.DU": "بنوك", "AJMANBANK.DU": "بنوك",
+    "FNB.DU": "بنوك", "RAKNIC.DU": "مالي", "ABNIC.DU": "مالي", "DNIC.DU": "مالي",
+    "TAKAFUL.DU": "مالي",
 }
 
-# ============================================================
-# تحميل قائمة S&P 500
-# ============================================================
-with st.spinner("جاري تحميل قائمة S&P 500..."):
-    SP500_STOCKS = get_sp500_tickers()
-
-# ============================================================
-# دمج جميع الأسواق
-# ============================================================
-
-# دمج جميع الأسهم في قاموس واحد للاستخدام في المسح
-ALL_STOCKS = {}
-ALL_STOCKS.update(ALL_EGX_STOCKS)
-ALL_STOCKS.update({f"{k} (US)": v for k, v in SP500_STOCKS.items()})
-ALL_STOCKS.update({f"{k} (Crypto)": v for k, v in CRYPTO_STOCKS.items()})
-
-# إضافة قطاعات العملات المشفرة
-for ticker in CRYPTO_STOCKS.values():
-    TICKER_SECTOR[ticker] = "عملات مشفرة"
-
-# ترتيب القائمة
+# نرتب حسب رمز السهم
 ALL_STOCKS = dict(sorted(ALL_STOCKS.items(), key=lambda kv: kv[1]))
 
-# ============================================================
-# دوال التحليل (نفس الكود الأصلي)
-# ============================================================
-
+# دالة حساب المؤشرات (نفس الكود الأصلي)
 def calculate_indicators(df):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(-1)
@@ -496,6 +512,7 @@ def calculate_indicators(df):
     df['Vol_MA10'] = df['Volume'].rolling(window=10).mean()
     return df
 
+# دوال التحليل المالي (نفس الكود الأصلي)
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_fundamentals(ticker: str) -> dict:
     empty = {
@@ -606,6 +623,7 @@ def score_fundamentals(f: dict) -> int:
 
     return max(0, min(100, score))
 
+# دوال تحميل البيانات (نفس الكود الأصلي)
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_single_stock(ticker: str, period: str = "100d"):
     return yf.download(ticker, period=period, progress=False, group_by='ticker')
@@ -654,49 +672,39 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
     return all_frames, failed
 
 # ============================================================
-# إحصائيات الشريط الجانبي
-# ============================================================
-st.sidebar.markdown("### 📊 إحصائيات السوق")
-st.sidebar.metric("🇺🇸 أسهم S&P 500", f"{len(SP500_STOCKS)} سهم")
-st.sidebar.metric("🇪🇬 أسهم مصرية", f"{len(ALL_EGX_STOCKS)} سهم")
-st.sidebar.metric("₿ عملات مشفرة", f"{len(CRYPTO_STOCKS)} عملة")
-st.sidebar.metric("📈 إجمالي", f"{len(ALL_STOCKS)} أصل")
-
-# ============================================================
 # الواجهة الرئيسية
 # ============================================================
 
-tab1, tab2 = st.tabs(["🔍 فحص سهم/عملة تفصيلي + رسم بياني", "🏆 مسح وترتيب السوق الاحترافي"])
+tab1, tab2 = st.tabs(["🔍 فحص سهم تفصيلي + رسم بياني", "🏆 مسح وترتيب السوق الاحترافي"])
 
 with tab1:
-    st.subheader("اختر الأصل المالي لتحليله بالتفصيل")
+    st.subheader("اختر سهمك المفضل لتحليله ورسم بياناته بالتفصيل")
     
+    # خيار اختيار السوق
     market_option = st.radio(
         "اختر السوق:",
-        ["🇪🇬 البورصة المصرية", "🇺🇸 S&P 500", "₿ العملات المشفرة"],
+        ["🇪🇬 البورصة المصرية (EGX)", "🇺🇸 البورصة الأمريكية (US)", "🇦🇪 البورصة الإماراتية (UAE)"],
         horizontal=True
     )
     
-    if market_option == "🇪🇬 البورصة المصرية":
-        stock_list = ALL_EGX_STOCKS
-        currency = "ج.م"
-    elif market_option == "🇺🇸 S&P 500":
-        stock_list = SP500_STOCKS
-        currency = "$"
-    else:
-        stock_list = CRYPTO_STOCKS
-        currency = "$"
+    # اختيار القائمة المناسبة
+    if market_option == "🇪🇬 البورصة المصرية (EGX)":
+        stock_list = EGX_STOCKS
+    elif market_option == "🇺🇸 البورصة الأمريكية (US)":
+        stock_list = US_STOCKS
+    else:  # UAE
+        stock_list = UAE_STOCKS
     
     col_input1, col_input2 = st.columns([2, 1])
     with col_input1:
-        selected_stock = st.selectbox("اختر من القائمة:", list(stock_list.keys()))
+        selected_stock = st.selectbox("اختر من قائمة السوق:", list(stock_list.keys()))
         ticker_input = stock_list[selected_stock]
     with col_input2:
         manual_ticker = st.text_input("أو اكتب رمزاً مخصصاً يدوياً:", value="").strip().upper()
         if manual_ticker:
             ticker_input = manual_ticker
 
-    if st.button("تحليل السهم/العملة ورسم المنحنى ⚡"):
+    if st.button("تحليل السهم ورسم المنحنى ⚡"):
         with st.spinner("جاري جلب البيانات..."):
             try:
                 df = fetch_single_stock(ticker_input, period="100d")
@@ -734,52 +742,39 @@ with tab1:
                     st.markdown(f'<div style="background-color:{color}; padding:20px; border-radius:10px; text-align:center; margin-bottom:20px;"><h2 style="color:white; margin:0;">القرار الحالي لـ {ticker_input}: {decision}</h2></div>', unsafe_allow_html=True)
                     
                     c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("السعر الحالي", f"{price:.2f} {currency}")
+                    c1.metric("السعر الحالي", f"{price:.2f} USD" if ticker_input in US_STOCKS.values() or ticker_input in UAE_STOCKS.values() else f"{price:.2f} ج.م")
                     c2.metric("مؤشر الزخم RSI", f"{rsi:.1f}")
                     c3.metric("مؤشر السيولة MFI", f"{mfi:.1f}")
                     c4.metric("حجم تداول اليوم (فوليوم)", f"{vol:,.0f}")
 
-                    # التحليل المالي الأساسي (للأسهم فقط)
-                    if ticker_input not in CRYPTO_STOCKS.values():
-                        fundamentals = fetch_fundamentals(ticker_input)
-                        fund_score = score_fundamentals(fundamentals)
+                    # التحليل المالي الأساسي
+                    fundamentals = fetch_fundamentals(ticker_input)
+                    fund_score = score_fundamentals(fundamentals)
 
-                        st.markdown("##### 💰 التحليل المالي الأساسي")
-                        f1, f2, f3, f4 = st.columns(4)
-                        pe_display = f"{fundamentals['pe_ratio']:.2f}" if fundamentals.get("pe_ratio") else "غير متاح"
-                        roe_display = f"{fundamentals['roe_%']:.1f}%" if fundamentals.get("roe_%") is not None else "غير متاح"
-                        pm_display = f"{fundamentals['profit_margin_%']:.1f}%" if fundamentals.get("profit_margin_%") is not None else "غير متاح"
-                        f1.metric("مكرر الربحية P/E", pe_display)
-                        f2.metric("العائد على حقوق الملكية ROE", roe_display)
-                        f3.metric("هامش الربح", pm_display)
-                        f4.metric("الدرجة المالية (من 100)", fund_score)
+                    st.markdown("##### 💰 التحليل المالي الأساسي")
+                    f1, f2, f3, f4 = st.columns(4)
+                    pe_display = f"{fundamentals['pe_ratio']:.2f}" if fundamentals.get("pe_ratio") else "غير متاح"
+                    roe_display = f"{fundamentals['roe_%']:.1f}%" if fundamentals.get("roe_%") is not None else "غير متاح"
+                    pm_display = f"{fundamentals['profit_margin_%']:.1f}%" if fundamentals.get("profit_margin_%") is not None else "غير متاح"
+                    f1.metric("مكرر الربحية P/E", pe_display)
+                    f2.metric("العائد على حقوق الملكية ROE", roe_display)
+                    f3.metric("هامش الربح", pm_display)
+                    f4.metric("الدرجة المالية (من 100)", fund_score)
 
-                        if not any(v is not None for v in fundamentals.values()):
-                            st.caption(
-                                "⚠️ البيانات المالية رجعت فاضية - على الأغلب Yahoo Finance رافض/حاظر "
-                                "الطلبات المالية مؤقتاً. التحليل الفني فوق مش متأثر."
-                            )
-
-                        # قاعدة جراهام
-                        graham = graham_from_fundamentals(fundamentals, price)
-                        st.markdown("##### 📐 قاعدة جراهام (المستثمر الدفاعي)")
-                        g1, g2, g3 = st.columns(3)
-                        graham_display = f"{graham['graham_number']:.2f} {currency}" if graham["graham_number"] else "غير متاح"
-                        upside_display = f"{graham['graham_upside_%']:+.1f}%" if graham["graham_upside_%"] is not None else "—"
-                        verdict_display = (
-                            "✅ تحت السعر العادل" if graham["undervalued_per_graham"] is True
-                            else "❌ فوق السعر العادل" if graham["undervalued_per_graham"] is False
-                            else "غير متاح"
-                        )
-                        g1.metric("رقم جراهام (السعر العادل)", graham_display)
-                        g2.metric("الفرق عن السعر الحالي", upside_display)
-                        g3.metric("الحكم", verdict_display)
-
-                        if graham["eps_estimated"] or graham["bvps_estimated"]:
-                            st.caption(
-                                "⚠️ EPS و/أو BVPS المستخدمين هنا **مُشتقين تقريبياً** من P/E و P/B "
-                                "(Yahoo مارجعش القيم الفعلية مباشرة) - راجعهم يدوياً من investing.com قبل أي قرار."
-                            )
+                    # قاعدة جراهام
+                    graham = graham_from_fundamentals(fundamentals, price)
+                    st.markdown("##### 📐 قاعدة جراهام (المستثمر الدفاعي)")
+                    g1, g2, g3 = st.columns(3)
+                    graham_display = f"{graham['graham_number']:.2f}" if graham["graham_number"] else "غير متاح"
+                    upside_display = f"{graham['graham_upside_%']:+.1f}%" if graham["graham_upside_%"] is not None else "—"
+                    verdict_display = (
+                        "✅ تحت السعر العادل" if graham["undervalued_per_graham"] is True
+                        else "❌ فوق السعر العادل" if graham["undervalued_per_graham"] is False
+                        else "غير متاح"
+                    )
+                    g1.metric("رقم جراهام (السعر العادل)", graham_display)
+                    g2.metric("الفرق عن السعر الحالي", upside_display)
+                    g3.metric("الحكم", verdict_display)
 
                     # الرسم البياني
                     fig = go.Figure()
@@ -792,16 +787,17 @@ with tab1:
                 st.error(f"حدث خطأ: {e}")
 
 with tab2:
-    st.subheader("📊 الفرز والترتيب المتقدم للأسواق")
+    st.subheader("📊 الفرز والترتيب المتقدم لأسهم السوق")
 
+    # اختيار السوق للمسح
     scan_market = st.radio(
         "اختر السوق للمسح:",
-        ["🇪🇬 البورصة المصرية", "🇺🇸 S&P 500", "₿ العملات المشفرة", "🌍 جميع الأسواق"],
+        ["🇪🇬 البورصة المصرية (EGX)", "🇺🇸 البورصة الأمريكية (US)", "🇦🇪 البورصة الإماراتية (UAE)", "🌍 جميع الأسواق"],
         horizontal=True
     )
 
     include_fundamentals_scan = st.checkbox(
-        "💰 تضمين التحليل المالي الأساسي + رقم جراهام (للأسهم فقط)",
+        "💰 تضمين التحليل المالي الأساسي + رقم جراهام",
         value=False,
     )
 
@@ -815,7 +811,7 @@ with tab2:
         )
     with fcol2:
         min_liquidity_scan = st.checkbox(
-            "💧 متوسط قيمة التداول اليومي (تقريبي) فوق 3 مليون فقط",
+            "💧 متوسط قيمة التداول اليومي فوق 3 مليون فقط",
             value=False,
         )
 
@@ -828,37 +824,35 @@ with tab2:
         progress_bar = st.progress(0)
         
         # اختيار الأسهم حسب السوق المحدد
-        if scan_market == "🇪🇬 البورصة المصرية":
-            stocks_to_scan = ALL_EGX_STOCKS
-        elif scan_market == "🇺🇸 S&P 500":
-            stocks_to_scan = SP500_STOCKS
-        elif scan_market == "₿ العملات المشفرة":
-            stocks_to_scan = CRYPTO_STOCKS
+        if scan_market == "🇪🇬 البورصة المصرية (EGX)":
+            stocks_to_scan = EGX_STOCKS
+        elif scan_market == "🇺🇸 البورصة الأمريكية (US)":
+            stocks_to_scan = US_STOCKS
+        elif scan_market == "🇦🇪 البورصة الإماراتية (UAE)":
+            stocks_to_scan = UAE_STOCKS
         else:
-            stocks_to_scan = {**ALL_EGX_STOCKS, **SP500_STOCKS, **CRYPTO_STOCKS}
+            stocks_to_scan = {**EGX_STOCKS, **US_STOCKS, **UAE_STOCKS}
         
         total_stocks = len(stocks_to_scan)
         
-        with st.spinner(f"جاري مسح {total_stocks} أصل على دفعات ({BATCH_SIZE} لكل دفعة)..."):
+        with st.spinner(f"جاري مسح {total_stocks} سهم على دفعات..."):
             tickers_list = list(stocks_to_scan.values())
             all_data, failed_tickers = fetch_batch_data(tuple(tickers_list), period="60d")
 
             if failed_tickers:
                 st.warning(
-                    f"⚠️ تعذر تحميل بيانات {len(failed_tickers)} أصل من أصل {len(tickers_list)}. "
-                    "التفاصيل الكاملة هتلاقيها في آخر الصفحة."
+                    f"⚠️ تعذر تحميل بيانات {len(failed_tickers)} سهم من أصل {len(tickers_list)}. "
+                    "التفاصيل الكاملة هتلاقيها في آخر الصفحة تحت 'الأسهم اللي اتخطاها'."
                 )
 
             skipped_count = 0
             skipped_names = []
             for idx, (name, ticker) in enumerate(stocks_to_scan.items()):
                 progress_bar.progress((idx + 1) / total_stocks)
-                
                 if ticker not in all_data:
                     skipped_count += 1
                     skipped_names.append((name, ticker, "لم يتم تحميل بياناته من المصدر"))
                     continue
-                    
                 try:
                     stock_df = all_data[ticker].dropna(how='all')
                     if stock_df.empty or len(stock_df) < 25:
@@ -880,13 +874,8 @@ with tab2:
                     vol_today = float(row['Volume'])
                     vol_ma10 = float(row['Vol_MA10'])
                     
-                    # تعديل حد الفوليوم حسب نوع الأصل
-                    if ticker in CRYPTO_STOCKS.values():
-                        if vol_today < 100000:
-                            continue
-                    else:
-                        if vol_today < 50000:
-                            continue
+                    if vol_today < 50000:
+                        continue
 
                     avg_trade_value = p * vol_ma10
                     if min_liquidity_scan and avg_trade_value < 3_000_000:
@@ -917,28 +906,25 @@ with tab2:
                     else:
                         status = "🟡 HOLD (مراقبة)"
                     
-                    # تحديد العملة المناسبة
-                    currency_symbol = "ج.م" if ticker.endswith(".CA") else "$"
-                    
                     data_entry = {
-                        "النقاط الفنية والسيولة": round(momentum_score, 1),
-                        "اسم الأصل": name,
-                        "الرمز": ticker,
+                        "النقاط الفنية والسيولة (من 100)": round(momentum_score, 1),
+                        "اسم الشركة": name,
+                        "الرمز البرمجي": ticker,
                         "القطاع": sector,
-                        "السعر": round(p, 2),
-                        "RSI": round(r, 1),
-                        "MFI": round(m, 1),
+                        "السعر الحالي": round(p, 2),
+                        "مؤشر الزخم RSI": round(r, 1),
+                        "مؤشر السيولة MFI": round(m, 1),
                         "فوليوم اليوم": f"{vol_today:,.0f}",
-                        "متوسط فوليوم": f"{vol_ma10:,.0f}",
+                        "متوسط فوليوم 10أيام": f"{vol_ma10:,.0f}",
+                        "متوسط قيمة التداول": f"{avg_trade_value:,.0f}",
                         "التقييم الفني": status
                     }
 
-                    # التحليل المالي (للأسهم فقط)
-                    if include_fundamentals_scan and ticker not in CRYPTO_STOCKS.values():
+                    if include_fundamentals_scan:
                         fundamentals = fetch_fundamentals(ticker)
                         fund_score = score_fundamentals(fundamentals)
                         combined_score = round(0.6 * momentum_score + 0.4 * fund_score, 1)
-                        data_entry["الدرجة المالية"] = fund_score
+                        data_entry["الدرجة المالية (من 100)"] = fund_score
                         data_entry["مكرر الربحية P/E"] = (
                             round(fundamentals["pe_ratio"], 2) if fundamentals.get("pe_ratio") else None
                         )
@@ -949,7 +935,6 @@ with tab2:
                         data_entry["فرق جراهام %"] = graham["graham_upside_%"]
                         data_entry["تحت السعر العادل؟"] = graham["undervalued_per_graham"]
                     
-                    # تصنيف النتائج
                     if is_new_cross and r < 52:
                         data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد طازة)"
                         fresh_cross_results.append(data_entry)
@@ -965,52 +950,44 @@ with tab2:
                         else:
                             data_entry["التقييم الفني"] = f"{status} [استثمار مستقر]"
                             long_term_investment.append(data_entry)
-                            
                 except Exception as e:
                     skipped_count += 1
                     skipped_names.append((name, ticker, f"خطأ أثناء التحليل: {e}"))
                     continue
             
             if skipped_count:
-                st.info(f"ℹ️ تم تخطي {skipped_count} أصل أثناء التحليل.")
-                with st.expander(f"📋 عرض تفاصيل الـ {skipped_count} أصل اللي اتخطاها"):
-                    for name, ticker, reason in skipped_names[:50]:
+                st.info(f"ℹ️ تم تخطي {skipped_count} سهم أثناء التحليل.")
+                with st.expander(f"📋 عرض تفاصيل الـ {skipped_count} سهم اللي اتخطاها"):
+                    for name, ticker, reason in skipped_names:
                         st.write(f"- **{name}** ({ticker}) — {reason}")
 
             st.success("تم التحديث النهائي والإغلاق الهندسي للرادار بنجاح! 🦅")
             
             # إرسال التقرير عبر تليجرام
-            telegram_msg = f"🦅 *تقرير قناص الأسواق العالمية اللحظي* 🌍\n"
-            telegram_msg += f"📊 *السوق:* {scan_market}\n"
-            telegram_msg += f"📅 {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+            telegram_msg = f"🦅 *تقرير قناص البورصة العالمية اللحظي* 🌍\n"
+            telegram_msg += f"📊 *السوق:* {scan_market}\n\n"
             
             if fresh_cross_results:
                 telegram_msg += "🌟 *أسهم تأسيس المركز (قاع صاعد):*\n"
                 for item in fresh_cross_results[:5]:
-                    telegram_msg += f"- {item['اسم الأصل']} ({item['السعر']})\n"
+                    telegram_msg += f"- {item['اسم الشركة']} ({item['السعر الحالي']} )\n"
                 telegram_msg += "\n"
                 
             if long_term_investment:
                 _lt_df = pd.DataFrame(long_term_investment)
-                _sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in _lt_df.columns else "النقاط الفنية والسيولة"
+                _sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in _lt_df.columns else "النقاط الفنية والسيولة (من 100)"
                 top_inv = _lt_df.sort_values(by=_sort_col, ascending=False).head(5)
                 telegram_msg += "📈 *أقوى أسهم الاتجاه الصاعد المستقر:*\n"
                 for _, row_inv in top_inv.iterrows():
-                    telegram_msg += f"- {row_inv['اسم الأصل']} | السعر: {row_inv['السعر']} | النقاط: {row_inv['النقاط الفنية والسيولة']}\n"
+                    telegram_msg += f"- {row_inv['اسم الشركة']} | السعر: {row_inv['السعر الحالي']} | النقاط: {row_inv['النقاط الفنية والسيولة (من 100)']}\n"
                 telegram_msg += "\n"
                 
             if short_term_trading:
-                top_trade = pd.DataFrame(short_term_trading).sort_values(by="النقاط الفنية والسيولة", ascending=False).head(5)
+                top_trade = pd.DataFrame(short_term_trading).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False).head(5)
                 telegram_msg += "⚡ *أقوى أسهم المضاربة اللحظية:*\n"
                 for _, row_tr in top_trade.iterrows():
-                    telegram_msg += f"- {row_tr['اسم الأصل']} | السعر: {row_tr['السعر']}\n"
+                    telegram_msg += f"- {row_tr['اسم الشركة']} | السعر: {row_tr['السعر الحالي']}\n"
             
-            if bottom_accumulation_results:
-                telegram_msg += "\n📥 *قيعان محتملة:*\n"
-                for item in bottom_accumulation_results[:5]:
-                    telegram_msg += f"- {item['اسم الأصل']} | RSI: {item['RSI']}\n"
-            
-            # إرسال الرسالة
             tg_success, tg_status_msg = send_telegram_alert(telegram_msg)
             if TELEGRAM_TOKEN or default_token or TELEGRAM_CHAT_ID or default_chat_id:
                 if tg_success:
@@ -1021,7 +998,7 @@ with tab2:
             # عرض الجداول
             st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم'")
             if fresh_cross_results:
-                st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة", ascending=False), use_container_width=True)
+                st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False), use_container_width=True)
             else:
                 st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم.")
                 
@@ -1029,7 +1006,7 @@ with tab2:
             
             st.markdown("### 📥 ثانياً: رادار تصيد القيعان")
             if bottom_accumulation_results:
-                st.dataframe(pd.DataFrame(bottom_accumulation_results).sort_values(by="RSI", ascending=True), use_container_width=True)
+                st.dataframe(pd.DataFrame(bottom_accumulation_results).sort_values(by="مؤشر الزخم RSI", ascending=True), use_container_width=True)
             else:
                 st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد.")
                 
@@ -1039,17 +1016,12 @@ with tab2:
             if short_term_trading:
                 st.dataframe(pd.DataFrame(short_term_trading).sort_values(by="فوليوم اليوم", ascending=False), use_container_width=True)
             else:
-                st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة.")
+                st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة حالياً.")
 
             st.write("---")
             
             st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر")
             if long_term_investment:
                 lt_df = pd.DataFrame(long_term_investment)
-                sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة"
+                sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة (من 100)"
                 st.dataframe(lt_df.sort_values(by=sort_col, ascending=False), use_container_width=True)
-                if include_fundamentals_scan:
-                    st.caption(
-                        "💡 مرتبة حسب 'الدرجة الشاملة' = 60% فني + 40% مالي. "
-                        "لو عمود مكرر الربحية P/E فاضي لسهم معين، يبقى Yahoo مارجعش بيانات مالية له."
-                    )
