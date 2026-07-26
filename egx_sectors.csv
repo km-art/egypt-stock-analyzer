@@ -222,3 +222,86 @@ GMCI,GMCI.CA,GMC Group For Industrial Commercial & Financial Investments,مال�
 EOSB,EOSB.CA,El Orouba Securities Brokerage,مالي غير مصرفي,False
 CPME,CPME.CA,Catalyst Partners,مالي غير مصرفي,False
 COPR,COPR.CA,Copper for Commercial Investment & Real Estate Development,مالي غير مصرفي,False
+symbol,company_name_en,sector,is_major_exporter
+BTC-USD,بيتكوين,عملات رقمية,False
+ETH-USD,إيثريوم,عملات رقمية,False
+USDT-USD,تيثر,عملات رقمية,False
+BNB-USD,باينانس كوين,عملات رقمية,False
+SOL-USD,سولانا,عملات رقمية,False
+XRP-USD,ريبل,عملات رقمية,False
+ADA-USD,كاردانو,عملات رقمية,False
+DOGE-USD,دوجكوين,عملات رقمية,False
+DOT-USD,بولكادوت,عملات رقمية,False
+LINK-USD,تشينلينك,عملات رقمية,False
+AVAX-USD,أفالانش,عملات رقمية,False
+MATIC-USD,بوليجون,عملات رقمية,False
+UNI-USD,يونيسواب,عملات رقمية,False
+ATOM-USD,كوموس,عملات رقمية,False
+LTC-USD,لايتكوين,عملات رقمية,False
+BCH-USD,بيتكوين كاش,عملات رقمية,False
+NEAR-USD,نير بروتوكول,عملات رقمية,False
+ALGO-USD,ألجوراند,عملات رقمية,False
+VET-USD,في تشين,عملات رقمية,False
+ICP-USD,إنترنت كمبيوتر,عملات رقمية,False
+FIL-USD,فايل كوين,عملات رقمية,False
+ETC-USD,إيثريوم كلاسيك,عملات رقمية,False
+STX-USD,ستاكس,عملات رقمية,False
+XLM-USD,ستيلر,عملات رقمية,False
+HBAR-USD,هيديرا,عملات رقمية,False
+APT-USD,أبتوس,عملات رقمية,False
+ARB-USD,أربيتروم,عملات رقمية,False
+MKR-USD,ميكر,عملات رقمية,False
+AAVE-USD,آفي,عملات رقمية,False
+GRT-USD,ذا جراف,عملات رقمية,False
+RNDR-USD,ريندر,عملات رقمية,False
+
+symbol,company_name_en,sector,is_major_exporter
+AAPL,أبل,تكنولوجيا,True
+MSFT,مايكروسوفت,تكنولوجيا,True
+GOOGL,ألفابت,تكنولوجيا,True
+AMZN,أمازون,استهلاكي,True
+NVDA,إنفيديا,تكنولوجيا,True
+META,ميتا,تكنولوجيا,True
+TSLA,تيسلا,استهلاكي,True
+BRK-B,بيركشاير هاثاواي,مالي,False
+JPM,جيه بي مورجان,مالي,False
+VISA,فيزا,مالي,False
+JNJ,جونسون آند جونسون,صحي,False
+WMT,وول مارت,استهلاكي,False
+PG,بروكتر آند جامبل,استهلاكي,False
+UNH,يونايتد هيلث,صحي,False
+HD,هوم ديبوت,استهلاكي,False
+MA,ماستركارد,مالي,False
+BAC,بنك أوف أمريكا,مالي,False
+CVX,شيفرون,طاقة,True
+XOM,إكسون موبيل,طاقة,True
+PFE,فايزر,صحي,False
+ABBV,أبفي,صحي,False
+TMO,ثيرمو فيشر,صحي,False
+COST,كوستكو,استهلاكي,False
+AVGO,برودكوم,تكنولوجيا,True
+NFLX,نتفليكس,تكنولوجيا,False
+ADBE,أدوبي,تكنولوجيا,False
+CRM,سيلزفورس,تكنولوجيا,False
+INTC,إنتل,تكنولوجيا,True
+AMD,إي إم دي,تكنولوجيا,True
+SPGI,إس آند بي جلوبال,مالي,False
+NKE,نايكي,استهلاكي,True
+TXN,تكساس إنسترومنتس,تكنولوجيا,True
+HON,هانيويل,تصنيع,True
+LOW,لوز,استهلاكي,False
+SBUX,ستاربكس,استهلاكي,False
+GS,جولدمان ساكس,مالي,False
+MS,مورجان ستانلي,مالي,False
+C,سيتي جروب,مالي,False
+AMAT,أبلايد ماتيريالز,تكنولوجيا,True
+LRCX,لام ريسيرتش,تكنولوجيا,True
+KLAC,كيه إل إيه,تكنولوجيا,True
+ADI,أنالوج ديفايسز,تكنولوجيا,True
+SNPS,سينوبسيس,تكنولوجيا,False
+CDNS,كادينس,تكنولوجيا,False
+REGN,ريجينيرون,صحي,False
+VRTX,فيرتكس,صحي,False
+MDT,ميدترونيك,صحي,False
+ISRG,إنتويتيف سيرجيكال,صحي,False
+BLK,بلاك روك,مالي,False
