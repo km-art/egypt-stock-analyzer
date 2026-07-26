@@ -13,9 +13,9 @@ st.title("🦅 قناص البورصة العالمية (مصر - أمريكا -
 st.write("تم تقفيل الكود بمعايير صارمة: إضافة حد أدنى للفوليوم لحجب الأسهم الميتة، وفلاتر حماية من التضخم الحاد.")
 
 # إعدادات عامة قابلة للتعديل
-BATCH_SIZE = 30       # عدد الأسهم في كل طلب تحميل
-BATCH_DELAY = 1.5     # ثواني انتظار بين كل دفعة
-CROSS_LOOKBACK = 3    # كام يوم نرجع بيهم للخلف لاكتشاف "تقاطع جديد"
+BATCH_SIZE = 30
+BATCH_DELAY = 1.5
+CROSS_LOOKBACK = 3
 
 # القراءة التلقائية من Streamlit Secrets
 try:
@@ -31,9 +31,6 @@ TELEGRAM_TOKEN = st.sidebar.text_input("أدخل Token البوت:", value=defau
 TELEGRAM_CHAT_ID = st.sidebar.text_input("أدخل Chat ID الخاص بك:", value=default_chat_id)
 
 def send_telegram_alert(message):
-    """
-    يرسل رسالة عبر تليجرام ويرجع (نجح: bool, رسالة الحالة: str)
-    """
     token = TELEGRAM_TOKEN if TELEGRAM_TOKEN else default_token
     chat_id = TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else default_chat_id
 
@@ -53,128 +50,48 @@ def send_telegram_alert(message):
         return False, f"خطأ في الاتصال بتليجرام: {e}"
 
 # ============================================================
-# الأسهم المصرية (EGX) - القائمة الكاملة
+# الأسهم المصرية (EGX)
 # ============================================================
 EGX_STOCKS = {
-    "A Capital Holding": "ACAP.CA", "AJWA For Food Industries Co. Egypt": "AJWA.CA",
-    "ASEC Company for Mining ASCOM": "ASCM.CA", "Act Financial": "ACTF.CA",
-    "Al Ahly for Development & Investment": "AFDI.CA", "Al Tawfeek Leasing Company": "ATLC.CA",
-    "AlKhair River for Development Agricultural Investment": "KRDI.CA", "Alexandria Co. For Pharmaceuticals & Chemical Industries": "AXPH.CA",
-    "Alexandria Flour Mills": "AFMC.CA", "Alexandria New Medical Center": "AMES.CA",
-    "Alexandria Spinning & Weaving Co.": "SPIN.CA", "Amer Group Holding Company": "AMER.CA",
-    "Arab Aluminum Company": "ALUM.CA", "Arab Co. for Asset Management and Development": "ACAMD.CA",
-    "Arab Company For Land Reclamation": "EALR.CA", "Arab Engineering Industries": "EEII.CA",
-    "Arab Moltaqa Investments Company": "AMIA.CA", "Arab Real Estate Investment Co.": "RREI.CA",
-    "Arab Valves Company": "ARVA.CA", "Arabia Cotton Ginning Company": "ACGC.CA",
-    "Arabia Investments Holding": "AIHC.CA", "Arabia for Investment and Development": "AIDC.CA",
-    "Arabian Cement Company": "ARCC.CA", "Aspire Capital Holding for Financial Investments": "ASPI.CA",
-    "Atlas for Investment & Food Industries": "ALRA.CA", "B Investments Holding": "BINV.CA",
-    "Bonyan for Development and Trade": "BONY.CA", "CI Capital Holding": "CICH.CA",
-    "CIRA Education": "CIRA.CA", "Cairo Educational Services": "CAED.CA",
-    "Cairo Oil & Soap Company": "COSG.CA", "Canal Shipping Agencies Company": "CSAG.CA",
-    "Catalyst Partners": "CPME.CA", "Cleopatra Hospitals Group": "CLHO.CA",
-    "Concrete Fashion Group": "CFGH.CA", "Contact Financial Holding": "CNFN.CA",
-    "Copper for Commercial Investment & Real Estate Development": "COPR.CA", "Creast Mark For Contracting And Real Estate Development": "CRST.CA",
-    "Credit Agricole Egypt Bank": "CIEB.CA", "Damietta Container & Cargo Handling Co.": "DCCC.CA",
-    "Delta Co. For Printing & Packaging": "DTPP.CA", "Delta Insurance Company": "DEIN.CA",
-    "Delta Sugar Company": "SUGR.CA", "Dice For Ready-Made Garments": "DSCW.CA",
-    "Digitize for Investment And Technology": "DGTZ.CA", "East Delta Flour Mills": "EDFM.CA",
-    "Egypt Free Shops Co.": "MFSC.CA", "Egypt for Poultry": "EPCO.CA",
-    "Egyptian Arabian Company (Themar) for Securities Brokerage": "EASB.CA", "Egyptian Financial and Industrial SAE": "EFIC.CA",
-    "Egyptian Gulf Bank": "EGBE.CA", "Egyptian Iron and Steel Company": "IRON.CA",
-    "Egyptian Media Production City": "MPRC.CA", "Egyptian Modern Education Systems": "MOED.CA",
-    "Egyptian Resorts Company": "EGTS.CA", "Egyptian Satellite Company Nilesat": "EGSA.CA",
-    "Egyptian Transport and Commercial Services": "ETRS.CA", "Egyptians for Housing & Development Co.": "EHDR.CA",
-    "El Ahram Co. For Printing And Packaging": "EPPK.CA", "El Kahera El Watania Investment": "KWIN.CA",
-    "El Nasr Manufacturing Agricultural Crops": "ELNA.CA", "El Orouba Securities Brokerage": "EOSB.CA",
-    "El Shams Pyramids Hotels & Touristic Projects": "SPHT.CA", "El Wadi for International and Investment Development": "ELWA.CA",
-    "El-Ebour Co. for Real Estate Investment": "OBRI.CA", "El-Nasr Clothing & Textiles Co.": "KABO.CA",
-    "Electro Cable Egypt": "ELEC.CA", "Export Development Bank of Egypt": "EXPA.CA",
-    "Faisal Islamic Bank of Egypt (EGP line)": "FAITA.CA", "Ferchem Misr for Fertilizers and Chemicals": "FERC.CA",
-    "GMC Group For Industrial Commercial & Financial Investments": "GMCI.CA", "GPI for Urban Growth": "GPIM.CA",
-    "GTEX for Commercial and Industrial Investments": "GTEX.CA", "Gadwa for Industrial Development": "GDWA.CA",
-    "General Co. For Silos & Storage": "GSSC.CA", "General Company For Land Reclamation Development & Reconstruction": "AALR.CA",
-    "General Company for Ceramic and Porcelain Products": "PRCL.CA", "Gharbia Islamic Housing Development Company": "GIHD.CA",
-    "GlaxoSmithKline Egypt": "BIOC.CA", "Go Green For Agricultural Investment And Development": "GGRN.CA",
-    "Golden Pyramids Plaza": "GPPL.CA", "Golden Textiles & Clothes Wool": "GTWL.CA",
-    "Gourmet Egypt.Com Foods": "GOUR.CA", "Grand Capital for Financial Investments": "GRCA.CA",
-    "Gulf Canadian Company for Arab Real Estate Investment": "CCRS.CA", "Industrial Engineering Company ICON": "ENGC.CA",
-    "International Co. For Investment & Development": "ICID.CA", "International Company for Agricultural Crops": "IFAP.CA",
-    "International Company for Leasing": "ICLE.CA", "Iron & Steel for Mines & Quarries": "ISMQ.CA",
-    "Ismailia Development and Real Estate Co": "IDRE.CA", "Ismailia National Co. for Food Industries": "INFI.CA",
-    "Kafr El Zayat For Pesticides & Chemicals": "KZPC.CA", "Kahira Pharmaceuticals & Chemical Industries": "CPCI.CA",
-    "Lecico Egypt": "LCSW.CA", "Lotus Agri Capital": "LUTS.CA",
-    "MINAPHARM Pharmaceuticals": "MIPH.CA", "MM Group for Industry and International Trade": "MTIE.CA",
-    "Macro Group Pharmaceuticals (Macro Capital)": "MCRO.CA", "Maridive and Oil Services": "MOIL.CA",
-    "Marsa Alam For Tourism Development": "MMAT.CA", "Marseille Almasreia Alkhalegeya For Holding Investment": "MAAL.CA",
-    "Memphis Pharmaceuticals & Chemical Industries": "MPCI.CA", "Mena for Touristic & Real Estate Investment": "MENA.CA",
-    "Middle & West Delta Flour Mills": "WCDF.CA", "Middle East Glass Manufacturing Company": "MEGM.CA",
-    "Misr Beni Suef Cement": "MBSC.CA", "Misr Cement (Qena)": "MCQE.CA",
-    "Misr Chemical Industries Co.": "MICH.CA", "Misr Hotels Company": "MHOT.CA",
-    "Misr National Steel - Ataqa": "ATQA.CA", "Misr Oils & Soap": "MOSC.CA",
-    "Mohandes Insurance Company": "MOIN.CA", "Naeem Holding Company For Investments": "NAHO.CA",
-    "Naeem Real Estate Holding Group": "NARE.CA", "Nasr Company for Civil Works": "NCCW.CA",
-    "National Company for Housing Professional Syndicates": "NHPS.CA", "National Drilling Company": "NDRL.CA",
-    "National Printing Company": "NAPR.CA", "North Cairo Flour Mills": "MILS.CA",
-    "Northern Upper Egypt For Development & Agricultural Production": "NEDA.CA", "Nozha International Hospital": "NINH.CA",
-    "O B Financial Holding": "OFH.CA", "Obour Land for Food Industries": "OLFI.CA",
-    "October Pharma": "OCPH.CA", "Orascom Construction PLC": "ORAS.CA",
-    "Oriental Weavers Carpets Company": "ORWE.CA", "Osool ESB Securities Brokerage": "EBSC.CA",
-    "Pioneers Properties For Urban Development": "PRDC.CA", "Port Said Containers And Cargo Handling Co.": "POCO.CA",
-    "Premium Healthcare Group": "PHGC.CA", "Prime Holding": "PRMH.CA",
-    "Pyramisa Hotels & Resorts": "PHTV.CA", "Qatar National Bank Al Ahli": "QNBE.CA",
-    "Raya Customer Experience": "RACC.CA", "Raya Holding for Financial Investments": "RAYA.CA",
-    "Real Estate Egyptian Consortium": "AREH.CA", "Remco Tourism Villages Construction": "RTVC.CA",
-    "Rowad Tourism Company": "ROTO.CA", "Rubex International for Plastic and Acrylic Manufacturing": "RUBX.CA",
-    "SHARM DREAMS Co. for Touristic Investment": "SDTI.CA", "Sabaa International Pharmaceutical and Chemical Industry": "SIPC.CA",
-    "Samad Misr EGYFERT": "SMFR.CA", "Saudi Egyptian Investment & Finance Co.": "SEIG.CA",
-    "Saudi Egyptian Investment & Finance Co. (line A)": "SEIGA.CA", "Sharkia National Company for Food Security": "SNFC.CA",
-    "Sinai Cement Co.": "SCEM.CA", "Sixth of October Development and Investment SODIC": "OCDI.CA",
-    "Société Arabe Internationale de Banque": "SAIB.CA", "South Cairo and Giza Flour Mills and Bakeries": "SCFM.CA",
-    "South Valley Cement Company": "SVCE.CA", "Speed Medical Co": "SPMD.CA",
-    "Suez Canal Company for Technology Settling": "SCTS.CA", "Taaleem Management Services": "TALM.CA",
-    "Tanmiya For Real Estate Investment": "TANM.CA", "Tenth of Ramadan Pharmaceutical (Rameda)": "RMDA.CA",
-    "The Arab Ceramic Co.": "CERA.CA", "The Arab Dairy Products Co.": "ADPC.CA",
-    "The United Bank": "UBEE.CA", "Trans Oceans Tours": "TRTO.CA",
-    "Tycoon Holding Company For Financial Investments": "ANFI.CA", "Unirab Polvara Spinning & Weaving Co.": "APSW.CA",
-    "United Co. for Housing & Development": "UNIT.CA", "Upper Egypt Mills Company": "UEFM.CA",
-    "Valmore Holding (EGP line)": "VLMRA.CA", "Valmore Holding (USD line)": "VLMR.CA",
-    "Valu Consumer Finance": "VALU.CA", "Wadi Kom Ombo For Land Reclamation Co.": "WKOL.CA",
-    "Zahraa El Maadi Investment and Development": "ZMID.CA", "أبو قير للأسمدة": "ABUK.CA",
-    "أكرو مصر للشدات": "ACRO.CA", "أودن للاستثمارات المالية": "ODIN.CA",
-    "أوراسكوم للاستثمار القابضة": "OIH.CA", "أوراسكوم للتنمية مصر": "ORHD.CA",
-    "إعمار مصر للتنمية": "EMFD.CA", "إي فاينانس للاستثمارات": "EFIH.CA",
-    "إيديتا للصناعات الغذائية": "EFID.CA", "ابن سينا فارما": "ISPH.CA",
-    "الأسكندرية لتداول الحاويات": "ALCN.CA", "الأسكندرية للزيوت المعدنية - أموك": "AMOC.CA",
-    "الاسكندرية لأسمنت بورتلاند": "ALEX.CA", "الاسماعيلية مصر للدواجن": "ISMA.CA",
-    "البنك التجاري الدولي": "COMI.CA", "التعمير والاستشارات الهندسية": "DAPH.CA",
-    "الجوهرة - العز للسيراميك": "ECAP.CA", "الجيزة العامة للمقاولات": "GGCC.CA",
-    "الزيوت المستخلصة ومنتجاتها": "ZEOT.CA", "السويدي إليكتريك": "SWDY.CA",
-    "الشرقية - إيسترن كومباني": "EAST.CA", "الشمس للإسكان والتعمير": "ELSH.CA",
-    "الصعيد العامة للمقاولات": "UEGC.CA", "العبوات الطبية": "MEPA.CA",
-    "العربية للأدوية": "ADCI.CA", "العز الدخيلة للصلب": "IRAX.CA",
-    "القاهرة للإسكان والتعمير": "ELKA.CA", "القاهرة للدواجن": "POUL.CA",
-    "القلعة للاستشارات المالية": "CCAP.CA", "المصرية للاتصالات": "ETEL.CA",
-    "المطورون العرب القابضة": "ARAB.CA", "المنصورة للدواجن": "MPCO.CA",
-    "النيل للأدوية": "NIPH.CA", "بالم هيلز للتعمير": "PHDC.CA",
-    "بلتون المالية القابضة": "BTFH.CA", "بنك البركة مصر": "SAUD.CA",
-    "بنك التعمير والإسكان": "HDBK.CA", "بنك فيصل الإسلامي - بالجنيه": "FAIT.CA",
-    "بنك قناة السويس": "CANA.CA", "جهينة للصناعات الغذائية": "JUFO.CA",
-    "جي بي كورب": "GBCO.CA", "حديد عز": "ESRS.CA",
-    "دومتي": "DOMT.CA", "راكتا لورق التعبئة": "RAKT.CA",
-    "سيدي كرير للبتروكيماويات": "SKPC.CA", "شمال أفريقيا للاستثمار": "NATI.CA",
-    "صناع التغليف - يونيفرت": "UNIP.CA", "طاقة عربية": "TAQA.CA",
-    "عبر المحيطات للمقاولات": "GOCE.CA", "غاز مصر": "EGAS.CA",
-    "فاركو للأدوية": "PHAR.CA", "فوري للمدفوعات الإلكترونية": "FWRY.CA",
-    "كيما - الصناعات الكيماوية": "EGCH.CA", "مجموعة إيـفـإى جـي هيرميس": "HRHO.CA",
-    "مجموعة طلعت مصطفى": "TMGH.CA", "مدينة مصر للإسكان": "MASR.CA",
-    "مصر الجديدة للإسكان": "HELI.CA", "مصر لإنتاج الأسمدة - موبكو": "MFPC.CA",
-    "مصر للألومنيوم": "EGAL.CA", "مصرف أبوظبي الإسلامي": "ADIB.CA",
-    "مطاحن مصر الوسطى": "CEFM.CA", "مطاحن ومخابز شمال القاهرة": "MNSF.CA",
+    "البنك التجاري الدولي": "COMI.CA",
+    "مجموعة طلعت مصطفى": "TMGH.CA",
+    "السويدي إليكتريك": "SWDY.CA",
+    "المصرية للاتصالات": "ETEL.CA",
+    "مصر للألومنيوم": "EGAL.CA",
+    "مصر لإنتاج الأسمدة - موبكو": "MFPC.CA",
+    "الشرقية - إيسترن كومباني": "EAST.CA",
+    "أبو قير للأسمدة": "ABUK.CA",
+    "أوراسكوم للاستثمار القابضة": "OIH.CA",
+    "أوراسكوم للتنمية مصر": "ORHD.CA",
+    "إي فاينانس للاستثمارات": "EFIH.CA",
+    "إيديتا للصناعات الغذائية": "EFID.CA",
+    "جهينة للصناعات الغذائية": "JUFO.CA",
+    "فاركو للأدوية": "PHAR.CA",
+    "فوري للمدفوعات الإلكترونية": "FWRY.CA",
+    "مجموعة إيـفـإى جـي هيرميس": "HRHO.CA",
+    "حديد عز": "ESRS.CA",
+    "بالم هيلز للتعمير": "PHDC.CA",
+    "مدينة مصر للإسكان": "MASR.CA",
+    "مصر الجديدة للإسكان": "HELI.CA",
+    "بنك التعمير والإسكان": "HDBK.CA",
+    "بنك البركة مصر": "SAUD.CA",
+    "بنك قناة السويس": "CANA.CA",
+    "مصرف أبوظبي الإسلامي": "ADIB.CA",
+    "القلعة للاستشارات المالية": "CCAP.CA",
+    "بلتون المالية القابضة": "BTFH.CA",
+    "راكتا لورق التعبئة": "RAKT.CA",
+    "دومتي": "DOMT.CA",
+    "غاز مصر": "EGAS.CA",
+    "سيدي كرير للبتروكيماويات": "SKPC.CA",
+    "كيما - الصناعات الكيماوية": "EGCH.CA",
+    "العز الدخيلة للصلب": "IRAX.CA",
+    "النيل للأدوية": "NIPH.CA",
+    "ابن سينا فارما": "ISPH.CA",
+    "إعمار مصر للتنمية": "EMFD.CA",
 }
 
 # ============================================================
-# الأسهم الأمريكية (US) - أشهر الشركات
+# الأسهم الأمريكية (US) - الرموز الصحيحة
 # ============================================================
 US_STOCKS = {
     "Apple Inc.": "AAPL",
@@ -230,7 +147,6 @@ US_STOCKS = {
     "Micron Technology": "MU",
     "Applied Materials": "AMAT",
     "Lam Research": "LRCX",
-    "KLA Corporation": "KLAC",
     "ASML Holding": "ASML",
     "Taiwan Semiconductor": "TSM",
     "SAP SE": "SAP",
@@ -241,16 +157,9 @@ US_STOCKS = {
     "Palo Alto Networks": "PANW",
     "Fortinet Inc.": "FTNT",
     "ServiceNow Inc.": "NOW",
-    "Workday Inc.": "WDAY",
-    "Datadog Inc.": "DDOG",
-    "Snowflake Inc.": "SNOW",
     "Uber Technologies": "UBER",
-    "Lyft Inc.": "LYFT",
     "Airbnb Inc.": "ABNB",
     "Booking Holdings": "BKNG",
-    "Expedia Group": "EXPE",
-    "Marriott International": "MAR",
-    "Hilton Worldwide": "HLT",
     "American Express": "AXP",
     "Goldman Sachs": "GS",
     "Morgan Stanley": "MS",
@@ -258,178 +167,122 @@ US_STOCKS = {
     "Wells Fargo": "WFC",
     "Citigroup Inc.": "C",
     "BlackRock Inc.": "BLK",
-    "Fidelity National": "FIS",
-    "Fiserv Inc.": "FISV",
-    "S&P Global": "SPGI",
-    "Moody's Corporation": "MCO",
-    "MSCI Inc.": "MSCI",
 }
 
 # ============================================================
-# الأسهم الإماراتية (UAE) - أسواق دبي وأبوظبي
+# الأسهم الإماراتية (UAE) - رموز Yahoo Finance الصحيحة
 # ============================================================
 UAE_STOCKS = {
-    # أبوظبي (ADX)
+    # البنوك الإماراتية
     "First Abu Dhabi Bank": "FAB.AD",
     "Abu Dhabi Commercial Bank": "ADCB.AD",
     "Abu Dhabi Islamic Bank": "ADIB.AD",
     "Emirates NBD Bank": "EMIRATES.AD",
-    "Mashreq Bank": "MASQ.AD",
+    "Dubai Islamic Bank": "DIB.AD",
+    "Sharjah Islamic Bank": "SIB.AD",
+    "Ras Al Khaimah National Bank": "RAKBNK.AD",
+    "National Bank of Umm Al Quwain": "NBQ.AD",
+    "United Arab Bank": "UAB.AD",
+    "Commercial Bank of Dubai": "CBD.AD",
+    "Ajman Bank": "AJMANBANK.AD",
+    "Emirates Islamic Bank": "EIB.AD",
+    
+    # العقارات والتطوير
     "Aldar Properties": "ALDAR.AD",
     "Emaar Properties": "EMAAR.AD",
     "DAMAC Properties": "DAMAC.AD",
     "RAK Properties": "RAKPROP.AD",
+    "Deyaar Development": "DEYAAR.AD",
+    "Union Properties": "UPP.AD",
     "Manazel Real Estate": "MANAZEL.AD",
-    "Abu Dhabi National Oil Co. (ADNOC)": "ADNOC.AD",
+    "Emaar Development": "EMAARDEV.AD",
+    "Dubai Investments": "DINV.AD",
+    
+    # الطاقة والموارد
     "ADNOC Distribution": "ADNOCDIST.AD",
     "ADNOC Drilling": "ADNOCDRILL.AD",
     "ADNOC Gas": "ADNOCGAS.AD",
-    "Abu Dhabi National Energy Co. (TAQA)": "TAQA.AD",
+    "Dana Gas": "DANA.AD",
+    "TAQA (Abu Dhabi National Energy)": "TAQA.AD",
+    "Emirates District Cooling (Tabreed)": "TABREED.AD",
+    "Gulf Navigation Holding": "GULFNAV.AD",
+    
+    # الاتصالات والتكنولوجيا
+    "Etisalat (Emirates Telecom)": "ETISALAT.AD",
+    "du (Emirates Integrated Telecom)": "DU.AD",
+    "Sirocom": "SIRO.AD",
+    "Salik Company": "SALIK.AD",
+    
+    # الصناعة والنقل
     "Abu Dhabi Ports Company": "ADPORTS.AD",
-    "Etihad Aviation Group": "ETIHAD.AD",
-    "Abu Dhabi National Hotels": "ADNH.AD",
-    "Abu Dhabi National Company for Building Materials": "BILDCO.AD",
+    "National Marine Dredging Company": "NMDC.AD",
     "Abu Dhabi Ship Building": "ADSB.AD",
     "Agility Public Warehousing": "AGILITY.AD",
-    "Al Ain Holding": "AINHOLD.AD",
-    "Al Ghurair Group": "GHURAIR.AD",
-    "Al Seer Marine": "ALSEER.AD",
-    "Alpha Dhabi Holding": "ALPHADHABI.AD",
-    "AMG International": "AMG.AD",
-    "Arkan Building Materials": "ARKAN.AD",
-    "Bayan Investment": "BAYAN.AD",
-    "Borosil Glass": "BOROSIL.AD",
-    "Burjeel Holdings": "BURJEEL.AD",
-    "Dana Gas": "DANA.AD",
-    "Dubai Islamic Bank": "DIB.AD",
-    "Emirates Islamic Bank": "EIB.AD",
-    "Emirates Insurance": "EIC.AD",
-    "Emirates Integrated Telecommunications (du)": "DU.AD",
-    "Emirates Telecommunications (Etisalat)": "ETISALAT.AD",
-    "Energy Holding": "ENERGY.AD",
-    "Eshraq Investments": "ESHRAQ.AD",
-    "Fertiglobe": "FERTIGLB.AD",
-    "Foodco Holding": "FOODCO.AD",
+    "Aramex International": "ARMX.AD",
+    "Air Arabia": "AIRA.AD",
     "Gulf Cement Company": "GCC.AD",
-    "Gulf Medical Projects": "GMP.AD",
-    "International Holdings Co. (IHC)": "IHC.AD",
-    "Invest Bank": "INVESTB.AD",
-    "National Bank of Umm Al Quwain": "NBQ.AD",
     "National Cement Company": "NCC.AD",
-    "National Marine Dredging Company": "NMDC.AD",
+    "Ras Al Khaimah Cement": "RAKC.AD",
+    "Sharjah Cement": "SHARJAH.AD",
+    "Arkan Building Materials": "ARKAN.AD",
+    "Al Seer Marine": "ALSEER.AD",
+    
+    # الاستثمار والمالية
+    "International Holdings Co. (IHC)": "IHC.AD",
+    "Alpha Dhabi Holding": "ALPHADHABI.AD",
+    "Q Holding": "QHOLDING.AD",
+    "Waha Capital": "WAHA.AD",
+    "Invest Bank": "INVESTB.AD",
+    "Dubai Financial Market": "DFM.AD",
+    "Abu Dhabi National Hotels": "ADNH.AD",
+    "Bayan Investment": "BAYAN.AD",
+    "Eshraq Investments": "ESHRAQ.AD",
+    
+    # الرعاية الصحية والأدوية
+    "Burjeel Holdings": "BURJEEL.AD",
+    "Gulf Medical Projects": "GMP.AD",
+    "Response Plus Holding": "RPM.AD",
+    
+    # الغذاء والزراعة
+    "Foodco Holding": "FOODCO.AD",
+    "Fertiglobe": "FERTIGLB.AD",
+    "Al Ain Holding": "AINHOLD.AD",
+    
+    # أخرى
     "Palms Sports": "PALMS.AD",
     "Phoenix Group": "PHOENIX.AD",
-    "Q Holding": "QHOLDING.AD",
-    "Ras Al Khaimah Cement": "RAKC.AD",
-    "Ras Al Khaimah National Bank": "RAKBNK.AD",
-    "Response Plus Holding": "RPM.AD",
-    "Salik Company": "SALIK.AD",
-    "Sharjah Cement": "SHARJAH.AD",
-    "Sharjah Islamic Bank": "SIB.AD",
-    "Sirocom": "SIRO.AD",
-    "Umm Al Quwain Cement": "UQC.AD",
-    "United Arab Bank": "UAB.AD",
-    "Waha Capital": "WAHA.AD",
-    # دبي (DFM)
-    "Dubai Financial Market": "DFM.DU",
-    "Emaar Development": "EMAARDEV.DU",
-    "Emaar Malls": "EMAARMALLS.DU",
-    "Arabtec Holding": "ARABTEC.DU",
-    "Deyaar Development": "DEYAAR.DU",
-    "Union Properties": "UPP.DU",
-    "TABREED (Emirates District Cooling)": "TABREED.DU",
-    "Dusit Thani Dubai": "DUSIT.DU",
-    "Gulf Navigation Holding": "GULFNAV.DU",
-    "Aramex International": "ARMX.DU",
-    "Air Arabia": "AIRA.DU",
-    "Dubai Investments": "DINV.DU",
-    "National Central Cooling Co. (Tabreed)": "TABREED.DU",
-    "Dubai Parks and Resorts": "DPR.DU",
-    "Meraas Holding": "MERAAS.DU",
-    "Meydan Group": "MEYDAN.DU",
-    "Nakheel Group": "NAKHEEL.DU",
-    "Wasl Properties": "WASL.DU",
-    "Mashreq Bank (Dubai)": "MASQ.DU",
-    "Commercial Bank of Dubai": "CBD.DU",
-    "Emirates NBD (Dubai)": "ENBD.DU",
-    "Union National Bank": "UNB.DU",
-    "National Bank of Ras Al Khaimah": "RAKBANK.DU",
-    "Gulf Bank (UAE)": "GULFBANK.DU",
-    "Ajman Bank": "AJMANBANK.DU",
-    "Fujairah National Bank": "FNB.DU",
-    "Ras Al Khaimah National Insurance": "RAKNIC.DU",
-    "Al Buhaira National Insurance": "ABNIC.DU",
-    "Dubai National Insurance": "DNIC.DU",
-    "Takaful Emarat": "TAKAFUL.DU",
+    "AMG International": "AMG.AD",
+    "Borosil Glass": "BOROSIL.AD",
+    "Abu Dhabi National Company for Building Materials": "BILDCO.AD",
+    "Energy Holding": "ENERGY.AD",
+    "Ghurair Group": "GHURAIR.AD",
 }
 
-# دمج جميع الأسهم في قاموس واحد مع تصنيف السوق
+# ============================================================
+# دمج جميع الأسهم مع تصنيفات القطاعات
+# ============================================================
+
+# دمج الأسهم
 ALL_STOCKS = {}
 ALL_STOCKS.update(EGX_STOCKS)
 ALL_STOCKS.update({f"{k} (US)": v for k, v in US_STOCKS.items()})
 ALL_STOCKS.update({f"{k} (UAE)": v for k, v in UAE_STOCKS.items()})
 
-# تصنيف قطاعي لكل سهم (مصري + أمريكي + إماراتي)
-TICKER_SECTOR = {
-    # الأسهم المصرية
+# تصنيف القطاعات للأسهم المصرية
+EGYPT_SECTOR = {
     "COMI.CA": "بنوك", "TMGH.CA": "عقاري", "SWDY.CA": "تصنيع", "ETEL.CA": "تكنولوجيا",
-    "EGAL.CA": "تصنيع", "MFPC.CA": "تصنيع", "QNBE.CA": "بنوك", "EAST.CA": "استهلاكي",
-    "ABUK.CA": "تصنيع", "ALCN.CA": "تصنيع", "ORAS.CA": "تصنيع", "EFIH.CA": "تكنولوجيا",
-    "HDBK.CA": "بنوك", "FWRY.CA": "تكنولوجيا", "EMFD.CA": "عقاري", "SCTS.CA": "تكنولوجيا",
-    "ADIB.CA": "بنوك", "PHDC.CA": "عقاري", "ORHD.CA": "عقاري", "GPPL.CA": "عقاري",
-    "VLMR.CA": "مالي غير مصرفي", "VLMRA.CA": "مالي غير مصرفي", "EFID.CA": "استهلاكي", "HRHO.CA": "مالي غير مصرفي",
-    "CANA.CA": "بنوك", "JUFO.CA": "استهلاكي", "BTFH.CA": "مالي غير مصرفي", "IRON.CA": "تصنيع",
-    "RAYA.CA": "تكنولوجيا", "FERC.CA": "تصنيع", "EGCH.CA": "تصنيع", "CIEB.CA": "بنوك",
-    "FAIT.CA": "بنوك", "FAITA.CA": "بنوك", "GBCO.CA": "تصنيع", "OCDI.CA": "عقاري",
-    "HELI.CA": "عقاري", "VALU.CA": "مالي غير مصرفي", "EXPA.CA": "بنوك", "CLHO.CA": "استهلاكي",
-    "EGTS.CA": "عقاري", "CCAP.CA": "مالي غير مصرفي", "ARCC.CA": "تصنيع", "EFIC.CA": "مالي غير مصرفي",
-    "SKPC.CA": "تصنيع", "MCQE.CA": "تصنيع", "TAQA.CA": "تصنيع", "POUL.CA": "استهلاكي",
-    "EGSA.CA": "تكنولوجيا", "MTIE.CA": "تكنولوجيا", "SCEM.CA": "تصنيع", "SAUD.CA": "بنوك",
-    "ORWE.CA": "تصنيع", "CIRA.CA": "استهلاكي", "MASR.CA": "عقاري", "UBEE.CA": "بنوك",
-    "PHAR.CA": "استهلاكي", "MBSC.CA": "تصنيع", "MHOT.CA": "استهلاكي", "CICH.CA": "مالي غير مصرفي",
-    "ISPH.CA": "استهلاكي", "EGBE.CA": "بنوك", "TALM.CA": "استهلاكي", "ATQA.CA": "تصنيع",
-    "MOIL.CA": "تصنيع", "AMOC.CA": "تصنيع", "BINV.CA": "عقاري", "RMDA.CA": "استهلاكي",
-    "IFAP.CA": "استهلاكي", "BONY.CA": "عقاري", "CSAG.CA": "تصنيع", "OLFI.CA": "استهلاكي",
-    "SPHT.CA": "استهلاكي", "NIPH.CA": "استهلاكي", "ISMQ.CA": "تصنيع", "MIPH.CA": "استهلاكي",
-    "OIH.CA": "مالي غير مصرفي", "ACAP.CA": "مالي غير مصرفي", "SUGR.CA": "استهلاكي", "EGAS.CA": "تصنيع",
-    "DOMT.CA": "استهلاكي", "ELEC.CA": "تصنيع", "MOIN.CA": "مالي غير مصرفي", "AMES.CA": "استهلاكي",
-    "PRDC.CA": "عقاري", "MPRC.CA": "تكنولوجيا", "BIOC.CA": "استهلاكي", "ZMID.CA": "عقاري",
-    "NAPR.CA": "تصنيع", "AXPH.CA": "استهلاكي", "NINH.CA": "استهلاكي", "CNFN.CA": "مالي غير مصرفي",
-    "GOUR.CA": "استهلاكي", "CPCI.CA": "استهلاكي", "SPIN.CA": "تصنيع", "PHTV.CA": "عقاري",
-    "ENGC.CA": "تصنيع", "DSCW.CA": "تصنيع", "MFSC.CA": "استهلاكي", "MPCI.CA": "استهلاكي",
-    "SVCE.CA": "تصنيع", "AMIA.CA": "مالي غير مصرفي", "GSSC.CA": "تصنيع", "OCPH.CA": "استهلاكي",
-    "GDWA.CA": "عقاري", "MICH.CA": "تصنيع", "WCDF.CA": "استهلاكي", "SAIB.CA": "بنوك",
-    "KABO.CA": "تصنيع", "UEFM.CA": "استهلاكي", "UNIT.CA": "عقاري", "ACAMD.CA": "عقاري",
-    "ACTF.CA": "مالي غير مصرفي", "ARAB.CA": "عقاري", "OFH.CA": "مالي غير مصرفي", "AJWA.CA": "استهلاكي",
-    "AMER.CA": "عقاري", "KZPC.CA": "تصنيع", "ACGC.CA": "تصنيع", "ADCI.CA": "استهلاكي",
-    "CFGH.CA": "تصنيع", "ELSH.CA": "عقاري", "ASCM.CA": "تصنيع", "AFMC.CA": "استهلاكي",
-    "ISMA.CA": "استهلاكي", "SDTI.CA": "مالي غير مصرفي", "ELKA.CA": "عقاري", "LCSW.CA": "تصنيع",
-    "GGRN.CA": "مالي غير مصرفي", "INFI.CA": "استهلاكي", "PHGC.CA": "استهلاكي", "SNFC.CA": "استهلاكي",
-    "NAHO.CA": "مالي غير مصرفي", "EDFM.CA": "استهلاكي", "ETRS.CA": "تصنيع", "SMFR.CA": "تصنيع",
-    "ATLC.CA": "مالي غير مصرفي", "RACC.CA": "مالي غير مصرفي", "DAPH.CA": "عقاري", "EALR.CA": "استهلاكي",
-    "ZEOT.CA": "استهلاكي", "ADPC.CA": "استهلاكي", "EHDR.CA": "عقاري", "IDRE.CA": "عقاري",
-    "MENA.CA": "عقاري", "WKOL.CA": "استهلاكي", "MOSC.CA": "استهلاكي", "MPCO.CA": "استهلاكي",
-    "ECAP.CA": "تصنيع", "CEFM.CA": "استهلاكي", "SCFM.CA": "استهلاكي", "GPIM.CA": "عقاري",
-    "MILS.CA": "استهلاكي", "OBRI.CA": "مالي غير مصرفي", "DEIN.CA": "مالي غير مصرفي", "CRST.CA": "عقاري",
-    "AALR.CA": "عقاري", "CERA.CA": "تصنيع", "NARE.CA": "مالي غير مصرفي", "PRCL.CA": "تصنيع",
-    "NDRL.CA": "تصنيع", "ALRA.CA": "مالي غير مصرفي", "ODIN.CA": "مالي غير مصرفي", "NCCW.CA": "تصنيع",
-    "MAAL.CA": "مالي غير مصرفي", "MEPA.CA": "استهلاكي", "NHPS.CA": "عقاري", "ALUM.CA": "تصنيع",
-    "SEIGA.CA": "مالي غير مصرفي", "POCO.CA": "تصنيع", "COSG.CA": "استهلاكي", "AIDC.CA": "مالي غير مصرفي",
-    "UEGC.CA": "مالي غير مصرفي", "RTVC.CA": "استهلاكي", "SEIG.CA": "مالي غير مصرفي", "EBSC.CA": "مالي غير مصرفي",
-    "PRMH.CA": "مالي غير مصرفي", "SIPC.CA": "استهلاكي", "GGCC.CA": "مالي غير مصرفي", "RREI.CA": "مالي غير مصرفي",
-    "CAED.CA": "استهلاكي", "GTEX.CA": "مالي غير مصرفي", "APSW.CA": "تصنيع", "AFDI.CA": "مالي غير مصرفي",
-    "MEGM.CA": "تصنيع", "ICLE.CA": "مالي غير مصرفي", "ARVA.CA": "تصنيع", "ANFI.CA": "مالي غير مصرفي",
-    "TANM.CA": "مالي غير مصرفي", "MCRO.CA": "مالي غير مصرفي", "MOED.CA": "استهلاكي", "DTPP.CA": "تصنيع",
-    "KRDI.CA": "مالي غير مصرفي", "GTWL.CA": "تصنيع", "RAKT.CA": "تصنيع", "SPMD.CA": "استهلاكي",
-    "UNIP.CA": "تصنيع", "RUBX.CA": "تصنيع", "ROTO.CA": "استهلاكي", "KWIN.CA": "مالي غير مصرفي",
-    "ASPI.CA": "مالي غير مصرفي", "ICID.CA": "مالي غير مصرفي", "AIHC.CA": "مالي غير مصرفي", "AREH.CA": "عقاري",
-    "EEII.CA": "تصنيع", "CCRS.CA": "مالي غير مصرفي", "EASB.CA": "مالي غير مصرفي", "GRCA.CA": "مالي غير مصرفي",
-    "EPCO.CA": "استهلاكي", "ELWA.CA": "مالي غير مصرفي", "LUTS.CA": "مالي غير مصرفي", "ELNA.CA": "استهلاكي",
-    "DGTZ.CA": "تكنولوجيا", "GIHD.CA": "عقاري", "DCCC.CA": "تصنيع", "NEDA.CA": "عقاري",
-    "TRTO.CA": "استهلاكي", "MMAT.CA": "عقاري", "EPPK.CA": "تصنيع", "GMCI.CA": "مالي غير مصرفي",
-    "EOSB.CA": "مالي غير مصرفي", "CPME.CA": "مالي غير مصرفي", "COPR.CA": "مالي غير مصرفي",
-    
-    # الأسهم الأمريكية
+    "EGAL.CA": "تصنيع", "MFPC.CA": "تصنيع", "EAST.CA": "استهلاكي", "ABUK.CA": "تصنيع",
+    "OIH.CA": "مالي", "ORHD.CA": "عقاري", "EFIH.CA": "تكنولوجيا", "EFID.CA": "استهلاكي",
+    "JUFO.CA": "استهلاكي", "PHAR.CA": "صحي", "FWRY.CA": "تكنولوجيا", "HRHO.CA": "مالي",
+    "ESRS.CA": "تصنيع", "PHDC.CA": "عقاري", "MASR.CA": "عقاري", "HELI.CA": "عقاري",
+    "HDBK.CA": "بنوك", "SAUD.CA": "بنوك", "CANA.CA": "بنوك", "ADIB.CA": "بنوك",
+    "CCAP.CA": "مالي", "BTFH.CA": "مالي", "RAKT.CA": "تصنيع", "DOMT.CA": "استهلاكي",
+    "EGAS.CA": "طاقة", "SKPC.CA": "تصنيع", "EGCH.CA": "تصنيع", "IRAX.CA": "تصنيع",
+    "NIPH.CA": "صحي", "ISPH.CA": "صحي", "EMFD.CA": "عقاري",
+}
+
+# تصنيف القطاعات للأسهم الأمريكية
+US_SECTOR = {
     "AAPL": "تكنولوجيا", "MSFT": "تكنولوجيا", "AMZN": "استهلاكي", "GOOGL": "تكنولوجيا",
     "META": "تكنولوجيا", "TSLA": "استهلاكي", "NVDA": "تكنولوجيا", "BRK-B": "مالي",
     "JNJ": "صحي", "V": "مالي", "PG": "استهلاكي", "JPM": "مالي",
@@ -443,46 +296,44 @@ TICKER_SECTOR = {
     "PFE": "صحي", "MRK": "صحي", "AMGN": "صحي", "GILD": "صحي",
     "BIIB": "صحي", "MRNA": "صحي", "AVGO": "تكنولوجيا", "TXN": "تكنولوجيا",
     "QCOM": "تكنولوجيا", "AMD": "تكنولوجيا", "MU": "تكنولوجيا", "AMAT": "تكنولوجيا",
-    "LRCX": "تكنولوجيا", "KLAC": "تكنولوجيا", "ASML": "تكنولوجيا", "TSM": "تكنولوجيا",
-    "SAP": "تكنولوجيا", "ACN": "تكنولوجيا", "DELL": "تكنولوجيا", "HPQ": "تكنولوجيا",
-    "CRWD": "تكنولوجيا", "PANW": "تكنولوجيا", "FTNT": "تكنولوجيا", "NOW": "تكنولوجيا",
-    "WDAY": "تكنولوجيا", "DDOG": "تكنولوجيا", "SNOW": "تكنولوجيا", "UBER": "تكنولوجيا",
-    "LYFT": "تكنولوجيا", "ABNB": "استهلاكي", "BKNG": "استهلاكي", "EXPE": "استهلاكي",
-    "MAR": "استهلاكي", "HLT": "استهلاكي", "AXP": "مالي", "GS": "مالي",
-    "MS": "مالي", "BAC": "مالي", "WFC": "مالي", "C": "مالي",
-    "BLK": "مالي", "FIS": "مالي", "FISV": "مالي", "SPGI": "مالي",
-    "MCO": "مالي", "MSCI": "مالي",
-    
-    # الأسهم الإماراتية
-    "FAB.AD": "بنوك", "ADCB.AD": "بنوك", "ADIB.AD": "بنوك", "EMIRATES.AD": "بنوك",
-    "MASQ.AD": "بنوك", "ALDAR.AD": "عقاري", "EMAAR.AD": "عقاري", "DAMAC.AD": "عقاري",
-    "RAKPROP.AD": "عقاري", "MANAZEL.AD": "عقاري", "ADNOC.AD": "طاقة", "ADNOCDIST.AD": "طاقة",
-    "ADNOCDRILL.AD": "طاقة", "ADNOCGAS.AD": "طاقة", "TAQA.AD": "طاقة", "ADPORTS.AD": "صناعي",
-    "ETIHAD.AD": "صناعي", "ADNH.AD": "استهلاكي", "BILDCO.AD": "تصنيع", "ADSB.AD": "صناعي",
-    "AGILITY.AD": "صناعي", "AINHOLD.AD": "مالي", "GHURAIR.AD": "مالي", "ALSEER.AD": "صناعي",
-    "ALPHADHABI.AD": "مالي", "AMG.AD": "مالي", "ARKAN.AD": "تصنيع", "BAYAN.AD": "مالي",
-    "BOROSIL.AD": "تصنيع", "BURJEEL.AD": "صحي", "DANA.AD": "طاقة", "DIB.AD": "بنوك",
-    "EIB.AD": "بنوك", "EIC.AD": "مالي", "DU.AD": "تكنولوجيا", "ETISALAT.AD": "تكنولوجيا",
-    "ENERGY.AD": "طاقة", "ESHRAQ.AD": "مالي", "FERTIGLB.AD": "تصنيع", "FOODCO.AD": "استهلاكي",
-    "GCC.AD": "تصنيع", "GMP.AD": "صحي", "IHC.AD": "مالي", "INVESTB.AD": "مالي",
-    "NBQ.AD": "بنوك", "NCC.AD": "تصنيع", "NMDC.AD": "صناعي", "PALMS.AD": "استهلاكي",
-    "PHOENIX.AD": "مالي", "QHOLDING.AD": "مالي", "RAKC.AD": "تصنيع", "RAKBNK.AD": "بنوك",
-    "RPM.AD": "صحي", "SALIK.AD": "صناعي", "SHARJAH.AD": "تصنيع", "SIB.AD": "بنوك",
-    "SIRO.AD": "تكنولوجيا", "UQC.AD": "تصنيع", "UAB.AD": "بنوك", "WAHA.AD": "مالي",
-    "DFM.DU": "مالي", "EMAARDEV.DU": "عقاري", "EMAARMALLS.DU": "عقاري", "ARABTEC.DU": "تصنيع",
-    "DEYAAR.DU": "عقاري", "UPP.DU": "عقاري", "TABREED.DU": "طاقة", "DUSIT.DU": "استهلاكي",
-    "GULFNAV.DU": "صناعي", "ARMX.DU": "صناعي", "AIRA.DU": "صناعي", "DINV.DU": "مالي",
-    "DPR.DU": "استهلاكي", "MERAAS.DU": "عقاري", "MEYDAN.DU": "استهلاكي", "NAKHEEL.DU": "عقاري",
-    "WASL.DU": "عقاري", "MASQ.DU": "بنوك", "CBD.DU": "بنوك", "ENBD.DU": "بنوك",
-    "UNB.DU": "بنوك", "RAKBANK.DU": "بنوك", "GULFBANK.DU": "بنوك", "AJMANBANK.DU": "بنوك",
-    "FNB.DU": "بنوك", "RAKNIC.DU": "مالي", "ABNIC.DU": "مالي", "DNIC.DU": "مالي",
-    "TAKAFUL.DU": "مالي",
+    "LRCX": "تكنولوجيا", "ASML": "تكنولوجيا", "TSM": "تكنولوجيا", "SAP": "تكنولوجيا",
+    "ACN": "تكنولوجيا", "DELL": "تكنولوجيا", "HPQ": "تكنولوجيا", "CRWD": "تكنولوجيا",
+    "PANW": "تكنولوجيا", "FTNT": "تكنولوجيا", "NOW": "تكنولوجيا", "UBER": "تكنولوجيا",
+    "ABNB": "استهلاكي", "BKNG": "استهلاكي", "AXP": "مالي", "GS": "مالي",
+    "MS": "مالي", "BAC": "مالي", "WFC": "مالي", "C": "مالي", "BLK": "مالي",
 }
+
+# تصنيف القطاعات للأسهم الإماراتية
+UAE_SECTOR = {
+    "FAB.AD": "بنوك", "ADCB.AD": "بنوك", "ADIB.AD": "بنوك", "EMIRATES.AD": "بنوك",
+    "DIB.AD": "بنوك", "SIB.AD": "بنوك", "RAKBNK.AD": "بنوك", "NBQ.AD": "بنوك",
+    "UAB.AD": "بنوك", "CBD.AD": "بنوك", "AJMANBANK.AD": "بنوك", "EIB.AD": "بنوك",
+    "ALDAR.AD": "عقاري", "EMAAR.AD": "عقاري", "DAMAC.AD": "عقاري", "RAKPROP.AD": "عقاري",
+    "DEYAAR.AD": "عقاري", "UPP.AD": "عقاري", "MANAZEL.AD": "عقاري", "EMAARDEV.AD": "عقاري",
+    "DINV.AD": "مالي", "ADNOCDIST.AD": "طاقة", "ADNOCDRILL.AD": "طاقة", "ADNOCGAS.AD": "طاقة",
+    "DANA.AD": "طاقة", "TAQA.AD": "طاقة", "TABREED.AD": "طاقة", "GULFNAV.AD": "صناعي",
+    "ETISALAT.AD": "تكنولوجيا", "DU.AD": "تكنولوجيا", "SIRO.AD": "تكنولوجيا", "SALIK.AD": "صناعي",
+    "ADPORTS.AD": "صناعي", "NMDC.AD": "صناعي", "ADSB.AD": "صناعي", "AGILITY.AD": "صناعي",
+    "ARMX.AD": "صناعي", "AIRA.AD": "صناعي", "GCC.AD": "تصنيع", "NCC.AD": "تصنيع",
+    "RAKC.AD": "تصنيع", "SHARJAH.AD": "تصنيع", "ARKAN.AD": "تصنيع", "ALSEER.AD": "صناعي",
+    "IHC.AD": "مالي", "ALPHADHABI.AD": "مالي", "QHOLDING.AD": "مالي", "WAHA.AD": "مالي",
+    "INVESTB.AD": "مالي", "DFM.AD": "مالي", "ADNH.AD": "استهلاكي", "BAYAN.AD": "مالي",
+    "ESHRAQ.AD": "مالي", "BURJEEL.AD": "صحي", "GMP.AD": "صحي", "RPM.AD": "صحي",
+    "FOODCO.AD": "استهلاكي", "FERTIGLB.AD": "تصنيع", "AINHOLD.AD": "مالي",
+    "PALMS.AD": "استهلاكي", "PHOENIX.AD": "مالي", "AMG.AD": "مالي", "BOROSIL.AD": "تصنيع",
+    "BILDCO.AD": "تصنيع", "ENERGY.AD": "طاقة", "GHURAIR.AD": "مالي",
+}
+
+# دمج التصنيفات
+TICKER_SECTOR = {**EGYPT_SECTOR, **US_SECTOR, **UAE_SECTOR}
 
 # نرتب حسب رمز السهم
 ALL_STOCKS = dict(sorted(ALL_STOCKS.items(), key=lambda kv: kv[1]))
 
-# دالة حساب المؤشرات (نفس الكود الأصلي)
+# ============================================================
+# دوال التحليل الأساسية
+# ============================================================
+
 def calculate_indicators(df):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(-1)
@@ -512,7 +363,6 @@ def calculate_indicators(df):
     df['Vol_MA10'] = df['Volume'].rolling(window=10).mean()
     return df
 
-# دوال التحليل المالي (نفس الكود الأصلي)
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_fundamentals(ticker: str) -> dict:
     empty = {
@@ -623,7 +473,7 @@ def score_fundamentals(f: dict) -> int:
 
     return max(0, min(100, score))
 
-# دوال تحميل البيانات (نفس الكود الأصلي)
+# دوال تحميل البيانات
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_single_stock(ticker: str, period: str = "100d"):
     return yf.download(ticker, period=period, progress=False, group_by='ticker')
@@ -680,19 +530,17 @@ tab1, tab2 = st.tabs(["🔍 فحص سهم تفصيلي + رسم بياني", "�
 with tab1:
     st.subheader("اختر سهمك المفضل لتحليله ورسم بياناته بالتفصيل")
     
-    # خيار اختيار السوق
     market_option = st.radio(
         "اختر السوق:",
         ["🇪🇬 البورصة المصرية (EGX)", "🇺🇸 البورصة الأمريكية (US)", "🇦🇪 البورصة الإماراتية (UAE)"],
         horizontal=True
     )
     
-    # اختيار القائمة المناسبة
     if market_option == "🇪🇬 البورصة المصرية (EGX)":
         stock_list = EGX_STOCKS
     elif market_option == "🇺🇸 البورصة الأمريكية (US)":
         stock_list = US_STOCKS
-    else:  # UAE
+    else:
         stock_list = UAE_STOCKS
     
     col_input1, col_input2 = st.columns([2, 1])
@@ -742,12 +590,13 @@ with tab1:
                     st.markdown(f'<div style="background-color:{color}; padding:20px; border-radius:10px; text-align:center; margin-bottom:20px;"><h2 style="color:white; margin:0;">القرار الحالي لـ {ticker_input}: {decision}</h2></div>', unsafe_allow_html=True)
                     
                     c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("السعر الحالي", f"{price:.2f} USD" if ticker_input in US_STOCKS.values() or ticker_input in UAE_STOCKS.values() else f"{price:.2f} ج.م")
+                    currency = "ج.م" if ticker_input.endswith(".CA") else "$"
+                    c1.metric("السعر الحالي", f"{price:.2f} {currency}")
                     c2.metric("مؤشر الزخم RSI", f"{rsi:.1f}")
                     c3.metric("مؤشر السيولة MFI", f"{mfi:.1f}")
                     c4.metric("حجم تداول اليوم (فوليوم)", f"{vol:,.0f}")
 
-                    # التحليل المالي الأساسي
+                    # التحليل المالي
                     fundamentals = fetch_fundamentals(ticker_input)
                     fund_score = score_fundamentals(fundamentals)
 
@@ -789,7 +638,6 @@ with tab1:
 with tab2:
     st.subheader("📊 الفرز والترتيب المتقدم لأسهم السوق")
 
-    # اختيار السوق للمسح
     scan_market = st.radio(
         "اختر السوق للمسح:",
         ["🇪🇬 البورصة المصرية (EGX)", "🇺🇸 البورصة الأمريكية (US)", "🇦🇪 البورصة الإماراتية (UAE)", "🌍 جميع الأسواق"],
@@ -805,7 +653,7 @@ with tab2:
     with fcol1:
         available_sectors = sorted(set(TICKER_SECTOR.values()))
         selected_sectors_scan = st.multiselect(
-            "🏢 فلتر القطاع (اختر واحد أو أكتر - سيبه فاضي لعرض كل القطاعات)",
+            "🏢 فلتر القطاع",
             options=available_sectors,
             default=[],
         )
@@ -823,7 +671,6 @@ with tab2:
         
         progress_bar = st.progress(0)
         
-        # اختيار الأسهم حسب السوق المحدد
         if scan_market == "🇪🇬 البورصة المصرية (EGX)":
             stocks_to_scan = EGX_STOCKS
         elif scan_market == "🇺🇸 البورصة الأمريكية (US)":
@@ -842,7 +689,7 @@ with tab2:
             if failed_tickers:
                 st.warning(
                     f"⚠️ تعذر تحميل بيانات {len(failed_tickers)} سهم من أصل {len(tickers_list)}. "
-                    "التفاصيل الكاملة هتلاقيها في آخر الصفحة تحت 'الأسهم اللي اتخطاها'."
+                    "التفاصيل الكاملة هتلاقيها في آخر الصفحة."
                 )
 
             skipped_count = 0
@@ -907,16 +754,15 @@ with tab2:
                         status = "🟡 HOLD (مراقبة)"
                     
                     data_entry = {
-                        "النقاط الفنية والسيولة (من 100)": round(momentum_score, 1),
+                        "النقاط الفنية والسيولة": round(momentum_score, 1),
                         "اسم الشركة": name,
                         "الرمز البرمجي": ticker,
                         "القطاع": sector,
                         "السعر الحالي": round(p, 2),
-                        "مؤشر الزخم RSI": round(r, 1),
-                        "مؤشر السيولة MFI": round(m, 1),
+                        "RSI": round(r, 1),
+                        "MFI": round(m, 1),
                         "فوليوم اليوم": f"{vol_today:,.0f}",
-                        "متوسط فوليوم 10أيام": f"{vol_ma10:,.0f}",
-                        "متوسط قيمة التداول": f"{avg_trade_value:,.0f}",
+                        "متوسط فوليوم": f"{vol_ma10:,.0f}",
                         "التقييم الفني": status
                     }
 
@@ -924,69 +770,67 @@ with tab2:
                         fundamentals = fetch_fundamentals(ticker)
                         fund_score = score_fundamentals(fundamentals)
                         combined_score = round(0.6 * momentum_score + 0.4 * fund_score, 1)
-                        data_entry["الدرجة المالية (من 100)"] = fund_score
-                        data_entry["مكرر الربحية P/E"] = (
-                            round(fundamentals["pe_ratio"], 2) if fundamentals.get("pe_ratio") else None
-                        )
-                        data_entry["الدرجة الشاملة (فني+مالي)"] = combined_score
+                        data_entry["الدرجة المالية"] = fund_score
+                        data_entry["P/E"] = round(fundamentals["pe_ratio"], 2) if fundamentals.get("pe_ratio") else None
+                        data_entry["الدرجة الشاملة"] = combined_score
 
                         graham = graham_from_fundamentals(fundamentals, p)
                         data_entry["رقم جراهام"] = graham["graham_number"]
                         data_entry["فرق جراهام %"] = graham["graham_upside_%"]
-                        data_entry["تحت السعر العادل؟"] = graham["undervalued_per_graham"]
+                        data_entry["تحت العادل؟"] = graham["undervalued_per_graham"]
                     
                     if is_new_cross and r < 52:
-                        data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد طازة)"
+                        data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد)"
                         fresh_cross_results.append(data_entry)
                     
                     elif r < 35 and m < 35:
-                        data_entry["التقييم الفني"] = "🛒 قاع تجميع (فرصة مراقبة صامتة)"
+                        data_entry["التقييم الفني"] = "🛒 قاع تجميع"
                         bottom_accumulation_results.append(data_entry)
                     
                     elif e9 > e21:
                         if vol_today > (vol_ma10 * 1.15) and 50 <= r <= 78:
-                            data_entry["التقييم الفني"] = f"{status} [مضاربة لحظية]"
+                            data_entry["التقييم الفني"] = f"{status} [مضاربة]"
                             short_term_trading.append(data_entry)
                         else:
-                            data_entry["التقييم الفني"] = f"{status} [استثمار مستقر]"
+                            data_entry["التقييم الفني"] = f"{status} [استثمار]"
                             long_term_investment.append(data_entry)
                 except Exception as e:
                     skipped_count += 1
-                    skipped_names.append((name, ticker, f"خطأ أثناء التحليل: {e}"))
+                    skipped_names.append((name, ticker, f"خطأ: {e}"))
                     continue
             
             if skipped_count:
-                st.info(f"ℹ️ تم تخطي {skipped_count} سهم أثناء التحليل.")
-                with st.expander(f"📋 عرض تفاصيل الـ {skipped_count} سهم اللي اتخطاها"):
+                st.info(f"ℹ️ تم تخطي {skipped_count} سهم.")
+                with st.expander(f"📋 تفاصيل الأسهم المتخطاة"):
                     for name, ticker, reason in skipped_names:
                         st.write(f"- **{name}** ({ticker}) — {reason}")
 
-            st.success("تم التحديث النهائي والإغلاق الهندسي للرادار بنجاح! 🦅")
+            st.success("✅ تم التحديث النهائي والإغلاق الهندسي للرادار بنجاح! 🦅")
             
-            # إرسال التقرير عبر تليجرام
-            telegram_msg = f"🦅 *تقرير قناص البورصة العالمية اللحظي* 🌍\n"
+            # إرسال التقرير
+            telegram_msg = f"🦅 *تقرير قناص البورصة العالمية* 🌍\n"
             telegram_msg += f"📊 *السوق:* {scan_market}\n\n"
             
             if fresh_cross_results:
-                telegram_msg += "🌟 *أسهم تأسيس المركز (قاع صاعد):*\n"
+                telegram_msg += "🌟 *تأسيس مركز (قاع صاعد):*\n"
                 for item in fresh_cross_results[:5]:
-                    telegram_msg += f"- {item['اسم الشركة']} ({item['السعر الحالي']} )\n"
+                    telegram_msg += f"- {item['اسم الشركة']} ({item['السعر الحالي']})\n"
                 telegram_msg += "\n"
                 
             if long_term_investment:
                 _lt_df = pd.DataFrame(long_term_investment)
-                _sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in _lt_df.columns else "النقاط الفنية والسيولة (من 100)"
+                _sort_col = "الدرجة الشاملة" if "الدرجة الشاملة" in _lt_df.columns else "النقاط الفنية والسيولة"
                 top_inv = _lt_df.sort_values(by=_sort_col, ascending=False).head(5)
-                telegram_msg += "📈 *أقوى أسهم الاتجاه الصاعد المستقر:*\n"
+                telegram_msg += "📈 *أقوى أسهم الاستثمار:*\n"
                 for _, row_inv in top_inv.iterrows():
-                    telegram_msg += f"- {row_inv['اسم الشركة']} | السعر: {row_inv['السعر الحالي']} | النقاط: {row_inv['النقاط الفنية والسيولة (من 100)']}\n"
+                    telegram_msg += f"- {row_inv['اسم الشركة']} | {row_inv['السعر الحالي']} | {row_inv['النقاط الفنية والسيولة']}\n"
                 telegram_msg += "\n"
                 
             if short_term_trading:
-                top_trade = pd.DataFrame(short_term_trading).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False).head(5)
-                telegram_msg += "⚡ *أقوى أسهم المضاربة اللحظية:*\n"
+                top_trade = pd.DataFrame(short_term_trading).sort_values(by="النقاط الفنية والسيولة", ascending=False).head(5)
+                telegram_msg += "⚡ *أقوى أسهم المضاربة:*\n"
                 for _, row_tr in top_trade.iterrows():
-                    telegram_msg += f"- {row_tr['اسم الشركة']} | السعر: {row_tr['السعر الحالي']}\n"
+                    telegram_msg += f"- {row_tr['اسم الشركة']} | {row_tr['السعر الحالي']}\n"
             
             tg_success, tg_status_msg = send_telegram_alert(telegram_msg)
             if TELEGRAM_TOKEN or default_token or TELEGRAM_CHAT_ID or default_chat_id:
@@ -996,32 +840,32 @@ with tab2:
                     st.sidebar.error(tg_status_msg)
             
             # عرض الجداول
-            st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم'")
+            st.markdown("### 🚀 تأسيس مركز جديد")
             if fresh_cross_results:
-                st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False), use_container_width=True)
+                st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة", ascending=False), use_container_width=True)
             else:
-                st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم.")
+                st.info("لا توجد أسهم لقطت تقاطع ذهبي اليوم.")
                 
             st.write("---")
             
-            st.markdown("### 📥 ثانياً: رادار تصيد القيعان")
+            st.markdown("### 📥 رادار القيعان")
             if bottom_accumulation_results:
-                st.dataframe(pd.DataFrame(bottom_accumulation_results).sort_values(by="مؤشر الزخم RSI", ascending=True), use_container_width=True)
+                st.dataframe(pd.DataFrame(bottom_accumulation_results).sort_values(by="RSI", ascending=True), use_container_width=True)
             else:
-                st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد.")
+                st.info("لا توجد أسهم في قيعان التشبع البيعي.")
                 
             st.write("---")
             
-            st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية")
+            st.markdown("### ⚡ أسهم المضاربة")
             if short_term_trading:
                 st.dataframe(pd.DataFrame(short_term_trading).sort_values(by="فوليوم اليوم", ascending=False), use_container_width=True)
             else:
-                st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة حالياً.")
+                st.info("لا توجد أسهم مستوفية لشروط المضاربة.")
 
             st.write("---")
             
-            st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر")
+            st.markdown("### 📈 أسهم الاستثمار المستقر")
             if long_term_investment:
                 lt_df = pd.DataFrame(long_term_investment)
-                sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة (من 100)"
+                sort_col = "الدرجة الشاملة" if "الدرجة الشاملة" in lt_df.columns else "النقاط الفنية والسيولة"
                 st.dataframe(lt_df.sort_values(by=sort_col, ascending=False), use_container_width=True)
