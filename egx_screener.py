@@ -240,6 +240,51 @@ def compute_graham(eps, bvps, price):
     }
 
 
+# عتبات قرار التوصية - عدّلها هنا لو حابب تشدد أو تخفف الشروط
+VERDICT_BUY_MIN_SHORT = 65
+VERDICT_BUY_MIN_LONG = 65
+VERDICT_SELL_MAX_SHORT = 35
+VERDICT_SELL_MAX_LONG = 40
+
+
+def compute_verdict(row: dict, include_fundamentals: bool) -> dict:
+    """
+    توصية "شراء / انتظار / بيع" مبنية على تحقق التحليل الفني والمالي **مع بعض**،
+    مش أي واحد لوحده. القاعدة:
+
+    - لو البيانات ناقصة (مفيش درجة فنية/طويلة، أو السيولة ضعيفة، أو التحليل
+      المالي كان مطلوب لكن بياناته رجعت فاضية) -> "انتظار" مع سبب واضح،
+      عشان محدش ياخد قرار على بيانات غير مكتملة.
+    - شراء: الدرجة القصيرة والطويلة **الاتنين** فوق العتبة، والسيولة كافية.
+    - بيع: الدرجة القصيرة والطويلة **الاتنين** تحت العتبة.
+    - غير كده: انتظار (إشارات متضاربة - مثلاً فني كويس ومالي ضعيف، أو العكس).
+
+    بيرجع dict فيه "التوصية" (نص) و"ترتيب_التوصية" (رقم للترتيب: 0=شراء
+    أولاً، 1=انتظار، 2=بيع أخيراً) عشان تقدر ترتب بيه الجدول بسهولة.
+    """
+    short = row.get("short_term_score")
+    long_ = row.get("long_term_score")
+    liquid = row.get("meets_liquidity_min")
+    fundamentals_fetched = row.get("fundamentals_fetched", True)
+
+    if short is None or long_ is None:
+        return {"التوصية": "🟡 انتظار (بيانات غير كافية)", "ترتيب_التوصية": 1}
+
+    if liquid is False:
+        return {"التوصية": "🟡 انتظار (سيولة ضعيفة)", "ترتيب_التوصية": 1}
+
+    if include_fundamentals and not fundamentals_fetched:
+        return {"التوصية": "🟡 انتظار (بيانات مالية ناقصة)", "ترتيب_التوصية": 1}
+
+    if short >= VERDICT_BUY_MIN_SHORT and long_ >= VERDICT_BUY_MIN_LONG:
+        return {"التوصية": "🟢 شراء", "ترتيب_التوصية": 0}
+
+    if short <= VERDICT_SELL_MAX_SHORT and long_ <= VERDICT_SELL_MAX_LONG:
+        return {"التوصية": "🔴 بيع", "ترتيب_التوصية": 2}
+
+    return {"التوصية": "🟡 انتظار (إشارات متضاربة)", "ترتيب_التوصية": 1}
+
+
 # ---------------------------------------------------------------------------
 # 3) تحميل البيانات وتحليل سهم واحد
 # ---------------------------------------------------------------------------
@@ -397,6 +442,8 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
         result["pe_below_15"] = (pe is not None and 0 < pe < 15)
     else:
         result["long_term_score"] = long_score
+
+    result.update(compute_verdict(result, include_fundamentals))
 
     return result
 
