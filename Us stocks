@@ -1,0 +1,503 @@
+symbol,yahoo_ticker,company_name,gics_sector,sector
+MMM,MMM,3M,Industrials,تصنيع
+AOS,AOS,A. O. Smith,Industrials,تصنيع
+ABT,ABT,Abbott Laboratories,Health Care,استهلاكي
+ABBV,ABBV,AbbVie,Health Care,استهلاكي
+ACN,ACN,Accenture,Information Technology,تكنولوجيا
+ADBE,ADBE,Adobe Inc.,Information Technology,تكنولوجيا
+AMD,AMD,Advanced Micro Devices,Information Technology,تكنولوجيا
+AES,AES,AES Corporation,Utilities,تصنيع
+AFL,AFL,Aflac,Financials,مالي غير مصرفي
+A,A,Agilent Technologies,Health Care,استهلاكي
+APD,APD,Air Products,Materials,تصنيع
+ABNB,ABNB,Airbnb,Consumer Discretionary,استهلاكي
+AKAM,AKAM,Akamai Technologies,Information Technology,تكنولوجيا
+ALB,ALB,Albemarle Corporation,Materials,تصنيع
+ARE,ARE,Alexandria Real Estate Equities,Real Estate,عقاري
+ALGN,ALGN,Align Technology,Health Care,استهلاكي
+ALLE,ALLE,Allegion,Industrials,تصنيع
+LNT,LNT,Alliant Energy,Utilities,تصنيع
+ALL,ALL,Allstate,Financials,مالي غير مصرفي
+GOOGL,GOOGL,Alphabet Inc. (Class A),Communication Services,تكنولوجيا
+GOOG,GOOG,Alphabet Inc. (Class C),Communication Services,تكنولوجيا
+MO,MO,Altria,Consumer Staples,استهلاكي
+AMZN,AMZN,Amazon,Consumer Discretionary,استهلاكي
+AMCR,AMCR,Amcor,Materials,تصنيع
+AEE,AEE,Ameren,Utilities,تصنيع
+AEP,AEP,American Electric Power,Utilities,تصنيع
+AXP,AXP,American Express,Financials,مالي غير مصرفي
+AIG,AIG,American International Group,Financials,مالي غير مصرفي
+AMT,AMT,American Tower,Real Estate,عقاري
+AWK,AWK,American Water Works,Utilities,تصنيع
+AMP,AMP,Ameriprise Financial,Financials,بنوك
+AME,AME,Ametek,Industrials,تصنيع
+AMGN,AMGN,Amgen,Health Care,استهلاكي
+APH,APH,Amphenol,Information Technology,تكنولوجيا
+ADI,ADI,Analog Devices,Information Technology,تكنولوجيا
+AON,AON,Aon plc,Financials,مالي غير مصرفي
+APA,APA,APA Corporation,Energy,تصنيع
+APO,APO,Apollo Global Management,Financials,بنوك
+AAPL,AAPL,Apple Inc.,Information Technology,تكنولوجيا
+AMAT,AMAT,Applied Materials,Information Technology,تكنولوجيا
+APP,APP,AppLovin,Information Technology,تكنولوجيا
+APTV,APTV,Aptiv,Consumer Discretionary,استهلاكي
+ACGL,ACGL,Arch Capital Group,Financials,مالي غير مصرفي
+ADM,ADM,Archer Daniels Midland,Consumer Staples,استهلاكي
+ARES,ARES,Ares Management,Financials,بنوك
+ANET,ANET,Arista Networks,Information Technology,تكنولوجيا
+AJG,AJG,Arthur J. Gallagher & Co.,Financials,مالي غير مصرفي
+AIZ,AIZ,Assurant,Financials,مالي غير مصرفي
+T,T,AT&T,Communication Services,تكنولوجيا
+ATO,ATO,Atmos Energy,Utilities,تصنيع
+ADSK,ADSK,Autodesk,Information Technology,تكنولوجيا
+ADP,ADP,Automatic Data Processing,Industrials,تصنيع
+AZO,AZO,AutoZone,Consumer Discretionary,استهلاكي
+AVB,AVB,AvalonBay Communities,Real Estate,عقاري
+AVY,AVY,Avery Dennison,Materials,تصنيع
+AXON,AXON,Axon Enterprise,Industrials,تصنيع
+BKR,BKR,Baker Hughes,Energy,تصنيع
+BALL,BALL,Ball Corporation,Materials,تصنيع
+BAC,BAC,Bank of America,Financials,بنوك
+BAX,BAX,Baxter International,Health Care,استهلاكي
+BDX,BDX,Becton Dickinson,Health Care,استهلاكي
+BRK.B,BRK-B,Berkshire Hathaway,Financials,مالي غير مصرفي
+BBY,BBY,Best Buy,Consumer Discretionary,استهلاكي
+TECH,TECH,Bio-Techne,Health Care,استهلاكي
+BIIB,BIIB,Biogen,Health Care,استهلاكي
+BLK,BLK,BlackRock,Financials,بنوك
+BX,BX,Blackstone Inc.,Financials,بنوك
+XYZ,XYZ,"Block, Inc.",Financials,مالي غير مصرفي
+BNY,BNY,BNY Mellon,Financials,بنوك
+BA,BA,Boeing,Industrials,تصنيع
+BKNG,BKNG,Booking Holdings,Consumer Discretionary,استهلاكي
+BSX,BSX,Boston Scientific,Health Care,استهلاكي
+BMY,BMY,Bristol Myers Squibb,Health Care,استهلاكي
+AVGO,AVGO,Broadcom,Information Technology,تكنولوجيا
+BR,BR,Broadridge Financial Solutions,Industrials,تصنيع
+BRO,BRO,Brown & Brown,Financials,مالي غير مصرفي
+BF.B,BF-B,Brown-Forman,Consumer Staples,استهلاكي
+BLDR,BLDR,Builders FirstSource,Industrials,تصنيع
+BG,BG,Bunge Global,Consumer Staples,استهلاكي
+BXP,BXP,"BXP, Inc.",Real Estate,عقاري
+CHRW,CHRW,C.H. Robinson,Industrials,تصنيع
+CDNS,CDNS,Cadence Design Systems,Information Technology,تكنولوجيا
+CPT,CPT,Camden Property Trust,Real Estate,عقاري
+CPB,CPB,Campbell's Company (The),Consumer Staples,استهلاكي
+COF,COF,Capital One,Financials,مالي غير مصرفي
+CAH,CAH,Cardinal Health,Health Care,استهلاكي
+CCL,CCL,Carnival Corporation,Consumer Discretionary,استهلاكي
+CARR,CARR,Carrier Global,Industrials,تصنيع
+CVNA,CVNA,Carvana,Consumer Discretionary,استهلاكي
+CASY,CASY,Casey's,Consumer Staples,استهلاكي
+CAT,CAT,Caterpillar Inc.,Industrials,تصنيع
+CBOE,CBOE,Cboe Global Markets,Financials,مالي غير مصرفي
+CBRE,CBRE,CBRE Group,Real Estate,عقاري
+CDW,CDW,CDW Corporation,Information Technology,تكنولوجيا
+COR,COR,Cencora,Health Care,استهلاكي
+CNC,CNC,Centene Corporation,Health Care,استهلاكي
+CNP,CNP,CenterPoint Energy,Utilities,تصنيع
+CF,CF,CF Industries,Materials,تصنيع
+CRL,CRL,Charles River Laboratories,Health Care,استهلاكي
+SCHW,SCHW,Charles Schwab Corporation,Financials,بنوك
+CHTR,CHTR,Charter Communications,Communication Services,تكنولوجيا
+CVX,CVX,Chevron Corporation,Energy,تصنيع
+CMG,CMG,Chipotle Mexican Grill,Consumer Discretionary,استهلاكي
+CB,CB,Chubb Limited,Financials,مالي غير مصرفي
+CHD,CHD,Church & Dwight,Consumer Staples,استهلاكي
+CIEN,CIEN,Ciena,Information Technology,تكنولوجيا
+CI,CI,Cigna,Health Care,استهلاكي
+CINF,CINF,Cincinnati Financial,Financials,مالي غير مصرفي
+CTAS,CTAS,Cintas,Industrials,تصنيع
+CSCO,CSCO,Cisco,Information Technology,تكنولوجيا
+C,C,Citigroup,Financials,بنوك
+CFG,CFG,Citizens Financial Group,Financials,بنوك
+CLX,CLX,Clorox,Consumer Staples,استهلاكي
+CME,CME,CME Group,Financials,مالي غير مصرفي
+CMS,CMS,CMS Energy,Utilities,تصنيع
+KO,KO,Coca-Cola Company (The),Consumer Staples,استهلاكي
+CTSH,CTSH,Cognizant,Information Technology,تكنولوجيا
+COHR,COHR,Coherent Corp.,Information Technology,تكنولوجيا
+COIN,COIN,Coinbase,Financials,مالي غير مصرفي
+CL,CL,Colgate-Palmolive,Consumer Staples,استهلاكي
+CMCSA,CMCSA,Comcast,Communication Services,تكنولوجيا
+FIX,FIX,Comfort Systems USA,Industrials,تصنيع
+CAG,CAG,Conagra Brands,Consumer Staples,استهلاكي
+COP,COP,ConocoPhillips,Energy,تصنيع
+ED,ED,Consolidated Edison,Utilities,تصنيع
+STZ,STZ,Constellation Brands,Consumer Staples,استهلاكي
+CEG,CEG,Constellation Energy,Utilities,تصنيع
+COO,COO,Cooper Companies (The),Health Care,استهلاكي
+CPRT,CPRT,Copart,Industrials,تصنيع
+GLW,GLW,Corning Inc.,Information Technology,تكنولوجيا
+CPAY,CPAY,Corpay,Financials,مالي غير مصرفي
+CTVA,CTVA,Corteva,Materials,تصنيع
+CSGP,CSGP,CoStar Group,Real Estate,عقاري
+COST,COST,Costco,Consumer Staples,استهلاكي
+CRH,CRH,CRH plc,Materials,تصنيع
+CRWD,CRWD,CrowdStrike,Information Technology,تكنولوجيا
+CCI,CCI,Crown Castle,Real Estate,عقاري
+CSX,CSX,CSX Corporation,Industrials,تصنيع
+CMI,CMI,Cummins,Industrials,تصنيع
+CVS,CVS,CVS Health,Health Care,استهلاكي
+DHR,DHR,Danaher Corporation,Health Care,استهلاكي
+DRI,DRI,Darden Restaurants,Consumer Discretionary,استهلاكي
+DDOG,DDOG,Datadog,Information Technology,تكنولوجيا
+DVA,DVA,DaVita,Health Care,استهلاكي
+DECK,DECK,Deckers Brands,Consumer Discretionary,استهلاكي
+DE,DE,Deere & Company,Industrials,تصنيع
+DELL,DELL,Dell Technologies,Information Technology,تكنولوجيا
+DAL,DAL,Delta Air Lines,Industrials,تصنيع
+DVN,DVN,Devon Energy,Energy,تصنيع
+DXCM,DXCM,Dexcom,Health Care,استهلاكي
+FANG,FANG,Diamondback Energy,Energy,تصنيع
+DLR,DLR,Digital Realty,Real Estate,عقاري
+DG,DG,Dollar General,Consumer Staples,استهلاكي
+DLTR,DLTR,Dollar Tree,Consumer Staples,استهلاكي
+D,D,Dominion Energy,Utilities,تصنيع
+DPZ,DPZ,Domino's,Consumer Discretionary,استهلاكي
+DASH,DASH,DoorDash,Consumer Discretionary,استهلاكي
+DOV,DOV,Dover Corporation,Industrials,تصنيع
+DOW,DOW,Dow Inc.,Materials,تصنيع
+DHI,DHI,D. R. Horton,Consumer Discretionary,استهلاكي
+DTE,DTE,DTE Energy,Utilities,تصنيع
+DUK,DUK,Duke Energy,Utilities,تصنيع
+DD,DD,DuPont,Materials,تصنيع
+ETN,ETN,Eaton Corporation,Industrials,تصنيع
+EBAY,EBAY,eBay Inc.,Consumer Discretionary,استهلاكي
+SATS,SATS,EchoStar,Communication Services,تكنولوجيا
+ECL,ECL,Ecolab,Materials,تصنيع
+EIX,EIX,Edison International,Utilities,تصنيع
+EW,EW,Edwards Lifesciences,Health Care,استهلاكي
+EA,EA,Electronic Arts,Communication Services,تكنولوجيا
+ELV,ELV,Elevance Health,Health Care,استهلاكي
+EME,EME,Emcor,Industrials,تصنيع
+EMR,EMR,Emerson Electric,Industrials,تصنيع
+ETR,ETR,Entergy,Utilities,تصنيع
+EOG,EOG,EOG Resources,Energy,تصنيع
+EPAM,EPAM,EPAM Systems,Information Technology,تكنولوجيا
+EQT,EQT,EQT Corporation,Energy,تصنيع
+EFX,EFX,Equifax,Industrials,تصنيع
+EQIX,EQIX,Equinix,Real Estate,عقاري
+EQR,EQR,Equity Residential,Real Estate,عقاري
+ERIE,ERIE,Erie Indemnity,Financials,مالي غير مصرفي
+ESS,ESS,Essex Property Trust,Real Estate,عقاري
+EL,EL,Estee Lauder Companies (The),Consumer Staples,استهلاكي
+EG,EG,Everest Group,Financials,مالي غير مصرفي
+EVRG,EVRG,Evergy,Utilities,تصنيع
+ES,ES,Eversource Energy,Utilities,تصنيع
+EXC,EXC,Exelon,Utilities,تصنيع
+EXE,EXE,Expand Energy,Energy,تصنيع
+EXPE,EXPE,Expedia Group,Consumer Discretionary,استهلاكي
+EXPD,EXPD,Expeditors International,Industrials,تصنيع
+EXR,EXR,Extra Space Storage,Real Estate,عقاري
+XOM,XOM,ExxonMobil,Energy,تصنيع
+FFIV,FFIV,"F5, Inc.",Information Technology,تكنولوجيا
+FDS,FDS,FactSet,Financials,مالي غير مصرفي
+FICO,FICO,Fair Isaac,Information Technology,تكنولوجيا
+FAST,FAST,Fastenal,Industrials,تصنيع
+FRT,FRT,Federal Realty Investment Trust,Real Estate,عقاري
+FDX,FDX,FedEx,Industrials,تصنيع
+FIS,FIS,Fidelity National Information Services,Financials,مالي غير مصرفي
+FITB,FITB,Fifth Third Bancorp,Financials,بنوك
+FSLR,FSLR,First Solar,Information Technology,تكنولوجيا
+FE,FE,FirstEnergy,Utilities,تصنيع
+FISV,FISV,Fiserv,Financials,مالي غير مصرفي
+F,F,Ford Motor Company,Consumer Discretionary,استهلاكي
+FTNT,FTNT,Fortinet,Information Technology,تكنولوجيا
+FTV,FTV,Fortive,Industrials,تصنيع
+FOXA,FOXA,Fox Corporation (Class A),Communication Services,تكنولوجيا
+FOX,FOX,Fox Corporation (Class B),Communication Services,تكنولوجيا
+BEN,BEN,Franklin Resources,Financials,بنوك
+FCX,FCX,Freeport-McMoRan,Materials,تصنيع
+GRMN,GRMN,Garmin,Consumer Discretionary,استهلاكي
+IT,IT,Gartner,Information Technology,تكنولوجيا
+GE,GE,GE Aerospace,Industrials,تصنيع
+GEHC,GEHC,GE HealthCare,Health Care,استهلاكي
+GEV,GEV,GE Vernova,Industrials,تصنيع
+GEN,GEN,Gen Digital,Information Technology,تكنولوجيا
+GNRC,GNRC,Generac,Industrials,تصنيع
+GD,GD,General Dynamics,Industrials,تصنيع
+GIS,GIS,General Mills,Consumer Staples,استهلاكي
+GM,GM,General Motors,Consumer Discretionary,استهلاكي
+GPC,GPC,Genuine Parts Company,Consumer Discretionary,استهلاكي
+GILD,GILD,Gilead Sciences,Health Care,استهلاكي
+GPN,GPN,Global Payments,Financials,مالي غير مصرفي
+GL,GL,Globe Life,Financials,مالي غير مصرفي
+GDDY,GDDY,GoDaddy,Information Technology,تكنولوجيا
+GS,GS,Goldman Sachs,Financials,بنوك
+HAL,HAL,Halliburton,Energy,تصنيع
+HIG,HIG,Hartford (The),Financials,مالي غير مصرفي
+HAS,HAS,Hasbro,Consumer Discretionary,استهلاكي
+HCA,HCA,HCA Healthcare,Health Care,استهلاكي
+DOC,DOC,Healthpeak Properties,Real Estate,عقاري
+HSIC,HSIC,Henry Schein,Health Care,استهلاكي
+HSY,HSY,Hershey Company (The),Consumer Staples,استهلاكي
+HPE,HPE,Hewlett Packard Enterprise,Information Technology,تكنولوجيا
+HLT,HLT,Hilton Worldwide,Consumer Discretionary,استهلاكي
+HD,HD,Home Depot (The),Consumer Discretionary,استهلاكي
+HON,HON,Honeywell,Industrials,تصنيع
+HRL,HRL,Hormel Foods,Consumer Staples,استهلاكي
+HST,HST,Host Hotels & Resorts,Real Estate,عقاري
+HWM,HWM,Howmet Aerospace,Industrials,تصنيع
+HPQ,HPQ,HP Inc.,Information Technology,تكنولوجيا
+HUBB,HUBB,Hubbell Incorporated,Industrials,تصنيع
+HUM,HUM,Humana,Health Care,استهلاكي
+HBAN,HBAN,Huntington Bancshares,Financials,بنوك
+HII,HII,Huntington Ingalls Industries,Industrials,تصنيع
+IBM,IBM,IBM,Information Technology,تكنولوجيا
+IEX,IEX,IDEX Corporation,Industrials,تصنيع
+IDXX,IDXX,Idexx Laboratories,Health Care,استهلاكي
+ITW,ITW,Illinois Tool Works,Industrials,تصنيع
+INCY,INCY,Incyte,Health Care,استهلاكي
+IR,IR,Ingersoll Rand,Industrials,تصنيع
+PODD,PODD,Insulet Corporation,Health Care,استهلاكي
+INTC,INTC,Intel,Information Technology,تكنولوجيا
+IBKR,IBKR,Interactive Brokers,Financials,بنوك
+ICE,ICE,Intercontinental Exchange,Financials,مالي غير مصرفي
+IFF,IFF,International Flavors & Fragrances,Materials,تصنيع
+IP,IP,International Paper,Materials,تصنيع
+INTU,INTU,Intuit,Information Technology,تكنولوجيا
+ISRG,ISRG,Intuitive Surgical,Health Care,استهلاكي
+IVZ,IVZ,Invesco,Financials,بنوك
+INVH,INVH,Invitation Homes,Real Estate,عقاري
+IQV,IQV,IQVIA,Health Care,استهلاكي
+IRM,IRM,Iron Mountain,Real Estate,عقاري
+JBHT,JBHT,J.B. Hunt,Industrials,تصنيع
+JBL,JBL,Jabil,Information Technology,تكنولوجيا
+JKHY,JKHY,Jack Henry & Associates,Financials,مالي غير مصرفي
+J,J,Jacobs Solutions,Industrials,تصنيع
+JNJ,JNJ,Johnson & Johnson,Health Care,استهلاكي
+JCI,JCI,Johnson Controls,Industrials,تصنيع
+JPM,JPM,JPMorgan Chase,Financials,بنوك
+KVUE,KVUE,Kenvue,Consumer Staples,استهلاكي
+KDP,KDP,Keurig Dr Pepper,Consumer Staples,استهلاكي
+KEY,KEY,KeyCorp,Financials,بنوك
+KEYS,KEYS,Keysight Technologies,Information Technology,تكنولوجيا
+KMB,KMB,Kimberly-Clark,Consumer Staples,استهلاكي
+KIM,KIM,Kimco Realty,Real Estate,عقاري
+KMI,KMI,Kinder Morgan,Energy,تصنيع
+KKR,KKR,KKR & Co.,Financials,بنوك
+KLAC,KLAC,KLA Corporation,Information Technology,تكنولوجيا
+KHC,KHC,Kraft Heinz,Consumer Staples,استهلاكي
+KR,KR,Kroger,Consumer Staples,استهلاكي
+LHX,LHX,L3Harris,Industrials,تصنيع
+LH,LH,Labcorp,Health Care,استهلاكي
+LRCX,LRCX,Lam Research,Information Technology,تكنولوجيا
+LVS,LVS,Las Vegas Sands,Consumer Discretionary,استهلاكي
+LDOS,LDOS,Leidos,Industrials,تصنيع
+LEN,LEN,Lennar,Consumer Discretionary,استهلاكي
+LII,LII,Lennox International,Industrials,تصنيع
+LLY,LLY,Lilly (Eli),Health Care,استهلاكي
+LIN,LIN,Linde plc,Materials,تصنيع
+LYV,LYV,Live Nation Entertainment,Communication Services,تكنولوجيا
+LMT,LMT,Lockheed Martin,Industrials,تصنيع
+L,L,Loews Corporation,Financials,مالي غير مصرفي
+LOW,LOW,Lowe's,Consumer Discretionary,استهلاكي
+LULU,LULU,Lululemon Athletica,Consumer Discretionary,استهلاكي
+LITE,LITE,Lumentum,Information Technology,تكنولوجيا
+LYB,LYB,LyondellBasell,Materials,تصنيع
+MTB,MTB,M&T Bank,Financials,بنوك
+MPC,MPC,Marathon Petroleum,Energy,تصنيع
+MAR,MAR,Marriott International,Consumer Discretionary,استهلاكي
+MRSH,MRSH,Marsh McLennan,Financials,مالي غير مصرفي
+MLM,MLM,Martin Marietta Materials,Materials,تصنيع
+MAS,MAS,Masco,Industrials,تصنيع
+MA,MA,Mastercard,Financials,مالي غير مصرفي
+MKC,MKC,McCormick & Company,Consumer Staples,استهلاكي
+MCD,MCD,McDonald's,Consumer Discretionary,استهلاكي
+MCK,MCK,McKesson Corporation,Health Care,استهلاكي
+MDT,MDT,Medtronic,Health Care,استهلاكي
+MRK,MRK,Merck & Co.,Health Care,استهلاكي
+META,META,Meta Platforms,Communication Services,تكنولوجيا
+MET,MET,MetLife,Financials,مالي غير مصرفي
+MTD,MTD,Mettler Toledo,Health Care,استهلاكي
+MGM,MGM,MGM Resorts,Consumer Discretionary,استهلاكي
+MCHP,MCHP,Microchip Technology,Information Technology,تكنولوجيا
+MU,MU,Micron Technology,Information Technology,تكنولوجيا
+MSFT,MSFT,Microsoft,Information Technology,تكنولوجيا
+MAA,MAA,Mid-America Apartment Communities,Real Estate,عقاري
+MRNA,MRNA,Moderna,Health Care,استهلاكي
+TAP,TAP,Molson Coors Beverage Company,Consumer Staples,استهلاكي
+MDLZ,MDLZ,Mondelez International,Consumer Staples,استهلاكي
+MPWR,MPWR,Monolithic Power Systems,Information Technology,تكنولوجيا
+MNST,MNST,Monster Beverage,Consumer Staples,استهلاكي
+MCO,MCO,Moody's Corporation,Financials,مالي غير مصرفي
+MS,MS,Morgan Stanley,Financials,بنوك
+MOS,MOS,Mosaic Company (The),Materials,تصنيع
+MSI,MSI,Motorola Solutions,Information Technology,تكنولوجيا
+MSCI,MSCI,MSCI Inc.,Financials,مالي غير مصرفي
+NDAQ,NDAQ,"Nasdaq, Inc.",Financials,مالي غير مصرفي
+NTAP,NTAP,NetApp,Information Technology,تكنولوجيا
+NFLX,NFLX,Netflix,Communication Services,تكنولوجيا
+NEM,NEM,Newmont,Materials,تصنيع
+NWSA,NWSA,News Corp (Class A),Communication Services,تكنولوجيا
+NWS,NWS,News Corp (Class B),Communication Services,تكنولوجيا
+NEE,NEE,NextEra Energy,Utilities,تصنيع
+NKE,NKE,"Nike, Inc.",Consumer Discretionary,استهلاكي
+NI,NI,NiSource,Utilities,تصنيع
+NDSN,NDSN,Nordson Corporation,Industrials,تصنيع
+NSC,NSC,Norfolk Southern,Industrials,تصنيع
+NTRS,NTRS,Northern Trust,Financials,بنوك
+NOC,NOC,Northrop Grumman,Industrials,تصنيع
+NCLH,NCLH,Norwegian Cruise Line Holdings,Consumer Discretionary,استهلاكي
+NRG,NRG,NRG Energy,Utilities,تصنيع
+NUE,NUE,Nucor,Materials,تصنيع
+NVDA,NVDA,Nvidia,Information Technology,تكنولوجيا
+NVR,NVR,"NVR, Inc.",Consumer Discretionary,استهلاكي
+NXPI,NXPI,NXP Semiconductors,Information Technology,تكنولوجيا
+ORLY,ORLY,O'Reilly Automotive,Consumer Discretionary,استهلاكي
+OXY,OXY,Occidental Petroleum,Energy,تصنيع
+ODFL,ODFL,Old Dominion,Industrials,تصنيع
+OMC,OMC,Omnicom Group,Communication Services,تكنولوجيا
+ON,ON,ON Semiconductor,Information Technology,تكنولوجيا
+OKE,OKE,Oneok,Energy,تصنيع
+ORCL,ORCL,Oracle Corporation,Information Technology,تكنولوجيا
+OTIS,OTIS,Otis Worldwide,Industrials,تصنيع
+PCAR,PCAR,Paccar,Industrials,تصنيع
+PKG,PKG,Packaging Corporation of America,Materials,تصنيع
+PLTR,PLTR,Palantir Technologies,Information Technology,تكنولوجيا
+PANW,PANW,Palo Alto Networks,Information Technology,تكنولوجيا
+PSKY,PSKY,Paramount Skydance Corporation,Communication Services,تكنولوجيا
+PH,PH,Parker Hannifin,Industrials,تصنيع
+PAYX,PAYX,Paychex,Industrials,تصنيع
+PYPL,PYPL,PayPal,Financials,مالي غير مصرفي
+PNR,PNR,Pentair,Industrials,تصنيع
+PEP,PEP,PepsiCo,Consumer Staples,استهلاكي
+PFE,PFE,Pfizer,Health Care,استهلاكي
+PCG,PCG,PG&E Corporation,Utilities,تصنيع
+PM,PM,Philip Morris International,Consumer Staples,استهلاكي
+PSX,PSX,Phillips 66,Energy,تصنيع
+PNW,PNW,Pinnacle West Capital,Utilities,تصنيع
+PNC,PNC,PNC Financial Services,Financials,بنوك
+POOL,POOL,Pool Corporation,Consumer Discretionary,استهلاكي
+PPG,PPG,PPG Industries,Materials,تصنيع
+PPL,PPL,PPL Corporation,Utilities,تصنيع
+PFG,PFG,Principal Financial Group,Financials,مالي غير مصرفي
+PG,PG,Procter & Gamble,Consumer Staples,استهلاكي
+PGR,PGR,Progressive Corporation,Financials,مالي غير مصرفي
+PLD,PLD,Prologis,Real Estate,عقاري
+PRU,PRU,Prudential Financial,Financials,مالي غير مصرفي
+PEG,PEG,Public Service Enterprise Group,Utilities,تصنيع
+PTC,PTC,PTC Inc.,Information Technology,تكنولوجيا
+PSA,PSA,Public Storage,Real Estate,عقاري
+PHM,PHM,PulteGroup,Consumer Discretionary,استهلاكي
+PWR,PWR,Quanta Services,Industrials,تصنيع
+QCOM,QCOM,Qualcomm,Information Technology,تكنولوجيا
+DGX,DGX,Quest Diagnostics,Health Care,استهلاكي
+RL,RL,Ralph Lauren Corporation,Consumer Discretionary,استهلاكي
+RJF,RJF,Raymond James Financial,Financials,بنوك
+RTX,RTX,RTX Corporation,Industrials,تصنيع
+O,O,Realty Income,Real Estate,عقاري
+REG,REG,Regency Centers,Real Estate,عقاري
+REGN,REGN,Regeneron Pharmaceuticals,Health Care,استهلاكي
+RF,RF,Regions Financial Corporation,Financials,بنوك
+RSG,RSG,Republic Services,Industrials,تصنيع
+RMD,RMD,ResMed,Health Care,استهلاكي
+RVTY,RVTY,Revvity,Health Care,استهلاكي
+HOOD,HOOD,Robinhood Markets,Financials,بنوك
+ROK,ROK,Rockwell Automation,Industrials,تصنيع
+ROL,ROL,"Rollins, Inc.",Industrials,تصنيع
+ROP,ROP,Roper Technologies,Information Technology,تكنولوجيا
+ROST,ROST,Ross Stores,Consumer Discretionary,استهلاكي
+RCL,RCL,Royal Caribbean Group,Consumer Discretionary,استهلاكي
+SPGI,SPGI,S&P Global,Financials,مالي غير مصرفي
+CRM,CRM,Salesforce,Information Technology,تكنولوجيا
+SNDK,SNDK,Sandisk,Information Technology,تكنولوجيا
+SBAC,SBAC,SBA Communications,Real Estate,عقاري
+SLB,SLB,Schlumberger,Energy,تصنيع
+STX,STX,Seagate Technology,Information Technology,تكنولوجيا
+SRE,SRE,Sempra,Utilities,تصنيع
+NOW,NOW,ServiceNow,Information Technology,تكنولوجيا
+SHW,SHW,Sherwin-Williams,Materials,تصنيع
+SPG,SPG,Simon Property Group,Real Estate,عقاري
+SWKS,SWKS,Skyworks Solutions,Information Technology,تكنولوجيا
+SJM,SJM,J.M. Smucker Company (The),Consumer Staples,استهلاكي
+SW,SW,Smurfit Westrock,Materials,تصنيع
+SNA,SNA,Snap-on,Industrials,تصنيع
+SOLV,SOLV,Solventum,Health Care,استهلاكي
+SO,SO,Southern Company,Utilities,تصنيع
+LUV,LUV,Southwest Airlines,Industrials,تصنيع
+SWK,SWK,Stanley Black & Decker,Industrials,تصنيع
+SBUX,SBUX,Starbucks,Consumer Discretionary,استهلاكي
+STT,STT,State Street Corporation,Financials,بنوك
+STLD,STLD,Steel Dynamics,Materials,تصنيع
+STE,STE,Steris,Health Care,استهلاكي
+SYK,SYK,Stryker Corporation,Health Care,استهلاكي
+SMCI,SMCI,Supermicro,Information Technology,تكنولوجيا
+SYF,SYF,Synchrony Financial,Financials,مالي غير مصرفي
+SNPS,SNPS,Synopsys,Information Technology,تكنولوجيا
+SYY,SYY,Sysco,Consumer Staples,استهلاكي
+TMUS,TMUS,T-Mobile US,Communication Services,تكنولوجيا
+TROW,TROW,T. Rowe Price,Financials,بنوك
+TTWO,TTWO,Take-Two Interactive,Communication Services,تكنولوجيا
+TPR,TPR,"Tapestry, Inc.",Consumer Discretionary,استهلاكي
+TRGP,TRGP,Targa Resources,Energy,تصنيع
+TGT,TGT,Target Corporation,Consumer Staples,استهلاكي
+TEL,TEL,TE Connectivity,Information Technology,تكنولوجيا
+TDY,TDY,Teledyne Technologies,Information Technology,تكنولوجيا
+TER,TER,Teradyne,Information Technology,تكنولوجيا
+TSLA,TSLA,"Tesla, Inc.",Consumer Discretionary,استهلاكي
+TXN,TXN,Texas Instruments,Information Technology,تكنولوجيا
+TPL,TPL,Texas Pacific Land Corporation,Energy,تصنيع
+TXT,TXT,Textron,Industrials,تصنيع
+TMO,TMO,Thermo Fisher Scientific,Health Care,استهلاكي
+TJX,TJX,TJX Companies,Consumer Discretionary,استهلاكي
+TKO,TKO,TKO Group Holdings,Communication Services,تكنولوجيا
+TTD,TTD,Trade Desk (The),Communication Services,تكنولوجيا
+TSCO,TSCO,Tractor Supply,Consumer Discretionary,استهلاكي
+TT,TT,Trane Technologies,Industrials,تصنيع
+TDG,TDG,TransDigm Group,Industrials,تصنيع
+TRV,TRV,Travelers Companies (The),Financials,مالي غير مصرفي
+TRMB,TRMB,Trimble Inc.,Information Technology,تكنولوجيا
+TFC,TFC,Truist Financial,Financials,بنوك
+TYL,TYL,Tyler Technologies,Information Technology,تكنولوجيا
+TSN,TSN,Tyson Foods,Consumer Staples,استهلاكي
+USB,USB,U.S. Bancorp,Financials,بنوك
+UBER,UBER,Uber,Industrials,تصنيع
+UDR,UDR,"UDR, Inc.",Real Estate,عقاري
+ULTA,ULTA,Ulta Beauty,Consumer Discretionary,استهلاكي
+UNP,UNP,Union Pacific Corporation,Industrials,تصنيع
+UAL,UAL,United Airlines Holdings,Industrials,تصنيع
+UPS,UPS,United Parcel Service,Industrials,تصنيع
+URI,URI,United Rentals,Industrials,تصنيع
+UNH,UNH,UnitedHealth Group,Health Care,استهلاكي
+UHS,UHS,Universal Health Services,Health Care,استهلاكي
+VLO,VLO,Valero Energy,Energy,تصنيع
+VEEV,VEEV,Veeva Systems,Health Care,استهلاكي
+VTR,VTR,Ventas,Real Estate,عقاري
+VLTO,VLTO,Veralto,Industrials,تصنيع
+VRSN,VRSN,Verisign,Information Technology,تكنولوجيا
+VRSK,VRSK,Verisk Analytics,Industrials,تصنيع
+VZ,VZ,Verizon,Communication Services,تكنولوجيا
+VRTX,VRTX,Vertex Pharmaceuticals,Health Care,استهلاكي
+VRT,VRT,Vertiv,Industrials,تصنيع
+VTRS,VTRS,Viatris,Health Care,استهلاكي
+VICI,VICI,Vici Properties,Real Estate,عقاري
+V,V,Visa Inc.,Financials,مالي غير مصرفي
+VST,VST,Vistra Corp.,Utilities,تصنيع
+VMC,VMC,Vulcan Materials Company,Materials,تصنيع
+WRB,WRB,W. R. Berkley Corporation,Financials,مالي غير مصرفي
+GWW,GWW,W. W. Grainger,Industrials,تصنيع
+WAB,WAB,Wabtec,Industrials,تصنيع
+WMT,WMT,Walmart,Consumer Staples,استهلاكي
+DIS,DIS,Walt Disney Company (The),Communication Services,تكنولوجيا
+WBD,WBD,Warner Bros. Discovery,Communication Services,تكنولوجيا
+WM,WM,Waste Management,Industrials,تصنيع
+WAT,WAT,Waters Corporation,Health Care,استهلاكي
+WEC,WEC,WEC Energy Group,Utilities,تصنيع
+WFC,WFC,Wells Fargo,Financials,بنوك
+WELL,WELL,Welltower,Real Estate,عقاري
+WST,WST,West Pharmaceutical Services,Health Care,استهلاكي
+WDC,WDC,Western Digital,Information Technology,تكنولوجيا
+WY,WY,Weyerhaeuser,Real Estate,عقاري
+WSM,WSM,"Williams-Sonoma, Inc.",Consumer Discretionary,استهلاكي
+WMB,WMB,Williams Companies,Energy,تصنيع
+WTW,WTW,Willis Towers Watson,Financials,مالي غير مصرفي
+WDAY,WDAY,"Workday, Inc.",Information Technology,تكنولوجيا
+WYNN,WYNN,Wynn Resorts,Consumer Discretionary,استهلاكي
+XEL,XEL,Xcel Energy,Utilities,تصنيع
+XYL,XYL,Xylem Inc.,Industrials,تصنيع
+YUM,YUM,Yum! Brands,Consumer Discretionary,استهلاكي
+ZBRA,ZBRA,Zebra Technologies,Information Technology,تكنولوجيا
+ZBH,ZBH,Zimmer Biomet,Health Care,استهلاكي
+ZTS,ZTS,Zoetis,Health Care,استهلاكي
