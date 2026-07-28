@@ -2,7 +2,10 @@ import os
 import pandas as pd
 import streamlit as st
 
-from egx_screener import EGX_TICKERS, US_TICKERS, UAE_TICKERS, MARKETS, run_screener
+from egx_screener import (
+    EGX_TICKERS, US_TICKERS, UAE_TICKERS, MARKETS, run_screener,
+    VERDICT_BUY_MIN_SHORT, VERDICT_SELL_MAX_SHORT, VERDICT_SELL_MAX_LONG,
+)
 
 st.set_page_config(page_title="Multi-Market Stock Screener", layout="wide")
 
@@ -227,11 +230,39 @@ if "price_is_live" in df.columns:
             "السعر شبه اللحظي مش متاح دلوقتي من المصدر المختار."
         )
 
-tab1, tab2, tab3 = st.tabs(["📊 المدى القصير", "📈 المدى الطويل + المالي", "🗂 كل البيانات والمؤشرات"])
+tab0, tab1, tab2, tab3 = st.tabs(["🎯 التوصية", "📊 المدى القصير", "📈 المدى الطويل + المالي", "🗂 كل البيانات والمؤشرات"])
+
+with tab0:
+    st.subheader("التوصية النهائية (فني + مالي مع بعض)")
+    st.caption(
+        "🟢 شراء = الدرجة الفنية القصيرة والدرجة الطويلة (فني+مالي) **الاتنين** "
+        f"فوق {VERDICT_BUY_MIN_SHORT} مع سيولة كافية. "
+        f"🔴 بيع = الاتنين تحت {VERDICT_SELL_MAX_SHORT}/{VERDICT_SELL_MAX_LONG}. "
+        "🟡 انتظار = إشارات متضاربة أو بيانات ناقصة. هذا ليس توصية استثمارية."
+    )
+    if "ترتيب_التوصية" in filtered.columns:
+        verdict_cols = ["ticker", "sector", "price", "التوصية", "short_term_score", "long_term_score"]
+        verdict_cols = [c for c in verdict_cols if c in filtered.columns]
+        st.dataframe(
+            filtered.sort_values(
+                ["ترتيب_التوصية", "short_term_score", "long_term_score"],
+                ascending=[True, False, False],
+            )[verdict_cols],
+            use_container_width=True,
+            hide_index=True,
+        )
+        counts = filtered["التوصية"].value_counts()
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🟢 شراء", int(sum(v for k, v in counts.items() if "شراء" in k)))
+        c2.metric("🟡 انتظار", int(sum(v for k, v in counts.items() if "انتظار" in k)))
+        c3.metric("🔴 بيع", int(sum(v for k, v in counts.items() if "بيع" in k)))
+    else:
+        st.info("عمود التوصية مش موجود في النتائج الحالية - شغّل التحليل تاني بالنسخة المحدّثة.")
 
 with tab1:
     st.subheader("أفضل الأسهم للمدى القصير")
-    short_cols = ["ticker", "price", "price_is_live", "rsi", "macd_hist", "above_sma20", "short_term_score"]
+    short_cols = ["ticker", "price", "price_is_live", "rsi", "macd_hist", "above_sma20",
+                  "short_term_score", "التوصية"]
     short_cols = [c for c in short_cols if c in filtered.columns]  # حماية لو عمود جديد لسه مش موجود في النسخة الشغالة
     st.dataframe(
         filtered.sort_values("short_term_score", ascending=False)[short_cols],
@@ -245,7 +276,7 @@ with tab1:
 
 with tab2:
     st.subheader("أفضل الأسهم للمدى الطويل (فني + مالي شامل)")
-    long_cols = ["ticker", "price", "price_is_live", "ret_1y_%", "volatility_%", "long_term_score"]
+    long_cols = ["ticker", "price", "price_is_live", "ret_1y_%", "volatility_%", "long_term_score", "التوصية"]
     if include_fundamentals:
         # إضافة المؤشرات الجديدة للجدول للمدى الطويل
         long_cols += ["pe_ratio", "pb_ratio", "dividend_yield_%", "profit_margin_%", "roe_%",
