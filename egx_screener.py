@@ -42,6 +42,30 @@ EGX_TICKERS = [
 ]
 
 _SECTORS_CSV_PATH = "egx_sectors.csv"
+_US_STOCKS_CSV_PATH = "us_stocks.csv"
+_UAE_STOCKS_CSV_PATH = "uae_stocks.csv"
+
+
+def _load_tickers_csv(csv_path: str, ticker_col: str = "yahoo_ticker") -> list[str]:
+    """تحميل عام لأي قائمة أسهم من CSV - بيرجع قائمة فاضية لو الملف مش موجود
+    بدل ما يكسر التطبيق (السوق ده هيختفي من الاختيار وبس)."""
+    try:
+        df = pd.read_csv(csv_path)
+        return df[ticker_col].dropna().unique().tolist()
+    except Exception as e:
+        print(f"⚠️  تعذر تحميل {csv_path} ({e}).")
+        return []
+
+
+def _load_sector_map_csv(csv_path: str, ticker_col: str = "yahoo_ticker",
+                          sector_col: str = "sector") -> dict:
+    """تحميل عام لخريطة (رمز -> قطاع) من أي ملف CSV فيه العمودين دول."""
+    try:
+        df = pd.read_csv(csv_path)
+        return dict(zip(df[ticker_col], df[sector_col]))
+    except Exception as e:
+        print(f"⚠️  تعذر تحميل {csv_path} ({e}).")
+        return {}
 
 
 def load_egx_sectors(csv_path: str = _SECTORS_CSV_PATH) -> dict:
@@ -66,10 +90,54 @@ def load_egx_sectors(csv_path: str = _SECTORS_CSV_PATH) -> dict:
 
 EGX_SECTORS = load_egx_sectors()
 
+# ---------------------------------------------------------------------------
+# 1ب) أسواق إضافية: أمريكا (S&P 500) والإمارات (DFM + ADX)
+# ---------------------------------------------------------------------------
+# على عكس EGX (اللي أسهمها مكتوبة مباشرة في الكود)، القوائم دي كبيرة جداً
+# (502 + 163 سهم) فبتتحمّل من ملفات CSV مصاحبة (us_stocks.csv, uae_stocks.csv).
+# لو الملفات دي مش موجودة، السوق المعني هيختفي من الاختيار بس EGX هيفضل شغال عادي.
+US_TICKERS = _load_tickers_csv(_US_STOCKS_CSV_PATH)
+US_SECTORS = _load_sector_map_csv(_US_STOCKS_CSV_PATH)
+
+UAE_TICKERS = _load_tickers_csv(_UAE_STOCKS_CSV_PATH)
+UAE_SECTORS = _load_sector_map_csv(_UAE_STOCKS_CSV_PATH)
+
+# سجل موحّد للأسواق - يستخدم في الواجهة لبناء قائمة الاختيار وعرض العملة الصحيحة
+MARKETS = {
+    "egx": {"label": "🇪🇬 مصر (EGX)", "tickers": EGX_TICKERS,
+            "currency": "EGP", "currency_label": "جنيه مصري", "default_min_liquidity": 3_000_000},
+    "us": {"label": "🇺🇸 أمريكا (S&P 500)", "tickers": US_TICKERS,
+           "currency": "USD", "currency_label": "دولار أمريكي", "default_min_liquidity": 5_000_000},
+    "uae": {"label": "🇦🇪 الإمارات (DFM + ADX)", "tickers": UAE_TICKERS,
+            "currency": "AED", "currency_label": "درهم إماراتي", "default_min_liquidity": 1_000_000},
+}
+
+
+def get_sector(ticker: str) -> str:
+    """يدوّر على قطاع السهم في أي من الأسواق التلاتة، وبيرجع 'غير مصنف' لو مش لاقيه."""
+    if ticker in EGX_SECTORS:
+        return EGX_SECTORS[ticker].get("sector", "غير مصنف")
+    if ticker in US_SECTORS:
+        return US_SECTORS[ticker]
+    if ticker in UAE_SECTORS:
+        return UAE_SECTORS[ticker]
+    return "غير مصنف"
+
+
+def get_is_major_exporter(ticker: str) -> bool:
+    """علم 'مُصدّر رئيسي' - متاح حالياً للأسهم المصرية بس (تصنيف يدوي مُعَد مسبقاً)."""
+    if ticker in EGX_SECTORS:
+        return EGX_SECTORS[ticker].get("is_major_exporter", False)
+    return False
+
+
 HISTORY_DAYS = 365 + 30
 
-# الحد الأدنى لمتوسط قيمة التداول اليومية (بالجنيه المصري) عشان السهم يعتبر "سائل بما يكفي"
-MIN_AVG_TRADE_VALUE_EGP = 3_000_000
+# الحد الأدنى الافتراضي لمتوسط قيمة التداول اليومية (بالعملة المحلية للسهم) عشان
+# يعتبر "سائل بما يكفي". القيمة دي افتراضية لمصر فقط - لو بتحلل سوق تاني، مرّر
+# قيمة مختلفة عبر run_screener(min_avg_trade_value=...) لأن الأرقام مش قابلة
+# للمقارنة مباشرة بين جنيه مصري ودولار ودرهم من غير تحويل عملة.
+DEFAULT_MIN_AVG_TRADE_VALUE = 3_000_000
 LIQUIDITY_LOOKBACK_DAYS = 20  # متوسط قيمة التداول محسوب على آخر كام يوم تداول
 
 
@@ -175,7 +243,8 @@ def compute_graham(eps, bvps, price):
 # ---------------------------------------------------------------------------
 # 3) تحميل البيانات وتحليل سهم واحد
 # ---------------------------------------------------------------------------
-def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> dict | None:
+def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
+                    min_avg_trade_value: float = DEFAULT_MIN_AVG_TRADE_VALUE) -> dict | None:
     try:
         df = provider.get_price_history(ticker, period_days=HISTORY_DAYS)
     except Exception as e:
@@ -218,7 +287,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
     # متوسط قيمة التداول اليومية (جنيه) = السعر × الكمية، متوسط على آخر LIQUIDITY_LOOKBACK_DAYS يوم
     trade_value = close * volume
     avg_trade_value = float(trade_value.rolling(LIQUIDITY_LOOKBACK_DAYS).mean().iloc[-1])
-    meets_liquidity_min = avg_trade_value >= MIN_AVG_TRADE_VALUE_EGP
+    meets_liquidity_min = avg_trade_value >= min_avg_trade_value
 
     ret_3m = (last_price / close.iloc[-63] - 1) * 100 if len(close) > 63 else np.nan
     ret_1y = (last_price / close.iloc[0] - 1) * 100
@@ -266,12 +335,10 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
         long_score -= 10
     long_score = max(0, min(100, long_score))
 
-    sector_info = EGX_SECTORS.get(ticker, {})
-
     result = {
         "ticker": ticker,
-        "sector": sector_info.get("sector", "غير مصنف"),
-        "is_major_exporter": sector_info.get("is_major_exporter", False),
+        "sector": get_sector(ticker),
+        "is_major_exporter": get_is_major_exporter(ticker),
         "price": round(last_price, 2),
         "price_is_live": price_is_live,
         "rsi": round(last_rsi, 1),
@@ -281,7 +348,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
         "ret_3m_%": round(ret_3m, 1) if not np.isnan(ret_3m) else None,
         "ret_1y_%": round(ret_1y, 1),
         "volatility_%": round(volatility, 1),
-        "avg_trade_value_egp": round(avg_trade_value, 0),
+        "avg_trade_value": round(avg_trade_value, 0),
         "meets_liquidity_min": meets_liquidity_min,
         "short_term_score": short_score,
         "long_term_technical_score": long_score,
@@ -335,7 +402,8 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True) -> 
 
 
 def run_screener(tickers=None, include_fundamentals=True, save_csv=True, verbose=True,
-                  provider=None, provider_name="yahoo", provider_kwargs=None):
+                  provider=None, provider_name="yahoo", provider_kwargs=None,
+                  min_avg_trade_value=DEFAULT_MIN_AVG_TRADE_VALUE):
     if provider is None:
         provider = get_provider(provider_name, **(provider_kwargs or {}))
 
@@ -344,7 +412,8 @@ def run_screener(tickers=None, include_fundamentals=True, save_csv=True, verbose
     for t in tickers:
         if verbose:
             print(f"جاري تحليل {t} ...")
-        r = analyze_ticker(t, provider, include_fundamentals=include_fundamentals)
+        r = analyze_ticker(t, provider, include_fundamentals=include_fundamentals,
+                            min_avg_trade_value=min_avg_trade_value)
         if r:
             results.append(r)
         time.sleep(0.5)  
