@@ -2,19 +2,35 @@ import os
 import pandas as pd
 import streamlit as st
 
-from egx_screener import EGX_TICKERS, run_screener
+from egx_screener import EGX_TICKERS, US_TICKERS, UAE_TICKERS, MARKETS, run_screener
 
-st.set_page_config(page_title="EGX Stock Screener", layout="wide")
+st.set_page_config(page_title="Multi-Market Stock Screener", layout="wide")
 
-st.title("📈 تحليل أسهم البورصة المصرية (EGX)")
+st.title("📈 محلل الأسهم متعدد الأسواق (مصر + أمريكا + الإمارات)")
 st.caption(
     "تحليل فني + أساسي مبني على بيانات تاريخية. "
     "هذا ليس توصية استثمارية — استخدمه كأداة مساعدة فقط."
 )
 
 # ---------------------------------------------------------------------------
-# الشريط الجانبي: إدارة وحفظ الأسهم والإعدادات
+# الشريط الجانبي: اختيار السوق وإدارة الأسهم والإعدادات
 # ---------------------------------------------------------------------------
+st.sidebar.header("🌍 اختيار السوق")
+
+selected_markets = st.sidebar.multiselect(
+    "اختار سوق واحد أو أكتر (فاضي = هتكتب/تلزق الأسهم يدوياً بنفسك تحت)",
+    options=list(MARKETS.keys()),
+    format_func=lambda k: f"{MARKETS[k]['label']} ({len(MARKETS[k]['tickers'])} سهم)",
+    default=["egx"],
+)
+
+if len(selected_markets) > 1:
+    st.sidebar.warning(
+        "⚠️ اخترت أكتر من سوق مع بعض. لاحظ إن العملة مختلفة لكل سوق "
+        "(جنيه/دولار/درهم)، فأي مقارنة مباشرة للأسعار أو قيمة التداول بين "
+        "الأسواق دي مش دقيقة من غير تحويل عملة."
+    )
+
 st.sidebar.header("⚙️ الإعدادات وإدارة الأسهم")
 
 # 1. إدارة ملف حفظ الأسهم لتجنب فتح محرر الأكواد
@@ -24,12 +40,17 @@ if os.path.exists(SAVED_TICKERS_FILE):
     with open(SAVED_TICKERS_FILE, "r", encoding="utf-8") as f:
         current_tickers_list = f.read()
 else:
-    # القائمة الافتراضية المستوردة من سكريبت التصفية
-    current_tickers_list = "\n".join(EGX_TICKERS)
+    # القائمة الافتراضية = دمج كل الأسواق المختارة (لو محددتش سوق، هتبقى فاضية
+    # وتكتب/تلزق الأسهم بنفسك - زي رمز عالمي لسهم مش موجود في قوائمنا الجاهزة)
+    combined = []
+    for key in selected_markets:
+        combined.extend(MARKETS[key]["tickers"])
+    current_tickers_list = "\n".join(combined)
 
-# 2. عرض المربع النصي لتعديل الأسهم مباشرة من الواجهة
+# 2. عرض المربع النصي لتعديل الأسهم مباشرة من الواجهة (تقدر تضيف أي رمز يدوياً
+#    هنا كمان - مثلاً سهم عالمي مش موجود في القوائم الجاهزة)
 custom_tickers_text = st.sidebar.text_area(
-    "رموز الأسهم (سطر لكل رمز، بصيغة .CA)",
+    "رموز الأسهم (سطر لكل رمز - .CA لمصر / بدون لاحقة لأمريكا / .AE للإمارات)",
     value=current_tickers_list,
     height=250,
 )
@@ -78,6 +99,23 @@ elif provider_choice == "csv":
         "التقرير المالي الرسمي لكل سهم تهتم بيه في fundamentals.csv."
     )
 
+st.sidebar.header("💧 حد السيولة")
+if len(selected_markets) == 1:
+    _m = MARKETS[selected_markets[0]]
+    default_liquidity = _m["default_min_liquidity"]
+    currency_label = _m["currency_label"]
+elif len(selected_markets) == 0:
+    default_liquidity = 3_000_000
+    currency_label = "بالعملة المحلية للسهم (غير محدد سوق)"
+else:
+    default_liquidity = 3_000_000
+    currency_label = "بالعملة المحلية لكل سهم على حدة (أسواق مختلطة)"
+
+min_avg_trade_value = st.sidebar.number_input(
+    f"أقل متوسط قيمة تداول يومي مقبول ({currency_label})",
+    min_value=0, value=int(default_liquidity), step=100_000,
+)
+
 run_button = st.sidebar.button("🔄 شغّل التحليل الآن", type="primary")
 
 if "df" not in st.session_state:
@@ -96,6 +134,7 @@ if run_button:
                 verbose=False,
                 provider_name=provider_choice,
                 provider_kwargs=provider_kwargs,
+                min_avg_trade_value=min_avg_trade_value,
             )
         except Exception as e:
             st.error(f"حصل خطأ أثناء التحليل: {e}")
@@ -143,7 +182,10 @@ with scol1:
     else:
         selected_sectors = []
 with scol2:
-    liquidity_filter = st.checkbox("متوسط قيمة التداول اليومي فوق 3 مليون جنيه فقط", value=False)
+    liquidity_filter = st.checkbox(
+        f"إخفاء الأسهم اللي متوسط تداولها أقل من الحد المدخل ({int(min_avg_trade_value):,})",
+        value=False,
+    )
 
 if selected_sectors:
     filtered = filtered[filtered["sector"].isin(selected_sectors)]
