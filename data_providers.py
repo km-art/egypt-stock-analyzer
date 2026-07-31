@@ -245,6 +245,54 @@ class CSVProvider(DataProvider):
         return out
 
 
+# ---------------------------------------------------------------------------
+# 4) Twelve Data - مكتبة/مصدر مخصص للسعر شبه اللحظي بس (مش provider كامل)
+# ---------------------------------------------------------------------------
+class TwelveDataLivePrice:
+    """
+    مصدر منفصل تماماً عن DataProvider، مخصص بس لجلب "آخر سعر" أقرب للحظي.
+    مش بديل لـ YahooProvider/EODHDProvider - بيُستخدم بس لتحسين حقل السعر
+    المعروض، والتحليل الفني بيفضل معتمد على yfinance زي ما هو.
+
+    التغطية حسب باقة Twelve Data (twelvedata.com/pricing):
+    - أمريكا (S&P 500): لحظي ومجاني بالكامل على باقة Basic (800 طلب/يوم).
+    - مصر (EGX): محتاجة باقة Pro المدفوعة على الأقل (99 دولار/شهر) - وشكل
+      رمز السهم عند Twelve Data لـ EGX مش بالضرورة زي رمز ياهو البسيط
+      (لاحظنا مثال زي "EGS691G1C015" بدل "COMI") - لازم تتأكد بنفسك من
+      الرمز الصح عبر /symbol_search عندهم قبل ما تعتمد عليه.
+    - الإمارات: التغطية غير مؤكدة، جرّبها بنفسك.
+
+    الاستخدام:
+        tdlp = TwelveDataLivePrice(api_key="...")
+        result = tdlp.get_price("AAPL")   # {"price": 213.5, "is_live": True} أو
+                                            # {"price": None, "is_live": False} لو فشل
+    """
+    BASE_URL = "https://api.twelvedata.com"
+
+    def __init__(self, api_key: str | None = None):
+        self.api_key = api_key or os.environ.get("TWELVEDATA_API_KEY")
+
+    def get_price(self, symbol: str) -> dict:
+        if not self.api_key:
+            return {"price": None, "is_live": False, "error": "مفيش API key"}
+        try:
+            resp = requests.get(
+                f"{self.BASE_URL}/price",
+                params={"symbol": symbol, "apikey": self.api_key},
+                timeout=10,
+            )
+            data = resp.json()
+            if "price" in data:
+                return {"price": float(data["price"]), "is_live": True, "error": None}
+            # Twelve Data بترجع {"code":..., "message":...} لو الرمز غلط أو مش
+            # مغطى بباقتك
+            return {"price": None, "is_live": False, "error": data.get("message", "استجابة غير متوقعة")}
+        except requests.exceptions.Timeout:
+            return {"price": None, "is_live": False, "error": "Timeout"}
+        except Exception as e:
+            return {"price": None, "is_live": False, "error": str(e)}
+
+
 def get_provider(name: str = "yahoo", **kwargs) -> DataProvider:
     name = name.lower()
     if name == "yahoo":
