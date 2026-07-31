@@ -1,8 +1,47 @@
+import os
 import time
 import numpy as np
 import pandas as pd
 
 from data_providers import get_provider, TwelveDataLivePrice
+
+# ---------------------------------------------------------------------------
+# 0) رموز بديلة (Ticker Overrides)
+# ---------------------------------------------------------------------------
+# اكتشفنا إن Yahoo Finance بيستخدم لبعض أسهم EGX رمز مبني على ISIN بدل الرمز
+# المختصر المعتاد - مثلاً "حديد عز" رمزها المعتاد ESRS.CA بس Yahoo فعلياً
+# محتاج EGS3C251C013-EGP.CA. الديكشنري ده بيخليك تربط الرمز المعتاد بالرمز
+# الصح اللي Yahoo فعلاً بيفهمه، من غير ما تغيّر الرمز المعروض في النتائج.
+#
+# لإضافة رمز بديل جديد: عدّل هنا مباشرة، أو (أسهل) استخدم الواجهة في
+# egx_screener_app.py اللي بتحفظ في ticker_overrides.csv تلقائياً.
+BUILT_IN_TICKER_OVERRIDES = {
+    "ESRS.CA": "EGS3C251C013-EGP.CA",  # حديد عز
+}
+
+_TICKER_OVERRIDES_CSV = "ticker_overrides.csv"
+
+
+def load_ticker_overrides(csv_path: str = _TICKER_OVERRIDES_CSV) -> dict:
+    """يدمج الرموز البديلة المدمجة في الكود + أي رموز أضافها المستخدم عبر الواجهة."""
+    overrides = dict(BUILT_IN_TICKER_OVERRIDES)
+    if os.path.exists(csv_path):
+        try:
+            df = pd.read_csv(csv_path)
+            overrides.update(dict(zip(df["original_ticker"], df["yahoo_symbol"])))
+        except Exception as e:
+            print(f"⚠️  تعذر تحميل {csv_path} ({e}).")
+    return overrides
+
+
+TICKER_OVERRIDES = load_ticker_overrides()
+
+
+def resolve_symbol(ticker: str) -> str:
+    """يرجع الرمز اللي فعلاً هيتبعت للمزود (Yahoo غالباً) - نفس الرمز الأصلي
+    لو مفيش بديل مسجّل ليه."""
+    return TICKER_OVERRIDES.get(ticker, ticker)
+
 
 # ---------------------------------------------------------------------------
 # 1) قائمة الأسهم: مكتوبة مباشرة هنا في الكود (223 سهم مدرج فعلياً في EGX)
@@ -291,8 +330,9 @@ def compute_verdict(row: dict, include_fundamentals: bool) -> dict:
 def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
                     min_avg_trade_value: float = DEFAULT_MIN_AVG_TRADE_VALUE,
                     td_live_price=None) -> dict | None:
+    yahoo_symbol = resolve_symbol(ticker)  # ممكن يبقى مختلف عن ticker لو فيه رمز بديل مسجّل
     try:
-        df = provider.get_price_history(ticker, period_days=HISTORY_DAYS)
+        df = provider.get_price_history(yahoo_symbol, period_days=HISTORY_DAYS)
     except Exception as e:
         print(f"⚠️  فشل تحميل بيانات {ticker}: {e}")
         return None
@@ -326,7 +366,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
     # الأولوية 2: fast_info من نفس مزود البيانات (Yahoo) - لو Twelve Data
     # مش مفعّلة أو فشلت لسبب ما
     if not price_is_live:
-        live = provider.get_live_price(ticker)
+        live = provider.get_live_price(yahoo_symbol)
         if live.get("is_live") and live.get("price"):
             last_price = float(live["price"])
             price_is_live = True
@@ -413,7 +453,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
     }
 
     if include_fundamentals:
-        fundamentals = provider.get_fundamentals(ticker)
+        fundamentals = provider.get_fundamentals(yahoo_symbol)
         fund_score = score_fundamentals(fundamentals)
         result.update(fundamentals)
         result["fundamental_score"] = fund_score
