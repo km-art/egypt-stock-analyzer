@@ -102,6 +102,22 @@ elif provider_choice == "csv":
         "التقرير المالي الرسمي لكل سهم تهتم بيه في fundamentals.csv."
     )
 
+st.sidebar.markdown("---")
+st.sidebar.subheader("🕐 سعر لحظي إضافي (اختياري)")
+enable_td_live = st.sidebar.checkbox("فعّل Twelve Data لسعر أقرب للحظي", value=False)
+td_live_price = None
+if enable_td_live:
+    st.sidebar.caption(
+        "🇺🇸 **مجاني ولحظي فعلاً للأسهم الأمريكية** (باقة Basic المجانية). "
+        "🇪🇬 **مصر محتاجة باقة Pro المدفوعة (99$/شهر على الأقل)**، وشكل رمز "
+        "السهم عندهم مختلف عن ياهو - جرّب وتأكد بنفسك قبل ما تعتمد عليه. "
+        "🇦🇪 الإمارات: التغطية غير مؤكدة."
+    )
+    td_api_key = st.sidebar.text_input("Twelve Data API Key", type="password")
+    if td_api_key:
+        from data_providers import TwelveDataLivePrice
+        td_live_price = TwelveDataLivePrice(api_key=td_api_key)
+
 st.sidebar.header("💧 حد السيولة")
 if len(selected_markets) == 1:
     _m = MARKETS[selected_markets[0]]
@@ -138,6 +154,7 @@ if run_button:
                 provider_name=provider_choice,
                 provider_kwargs=provider_kwargs,
                 min_avg_trade_value=min_avg_trade_value,
+                td_live_price=td_live_price,
             )
         except Exception as e:
             st.error(f"حصل خطأ أثناء التحليل: {e}")
@@ -261,7 +278,7 @@ with tab0:
 
 with tab1:
     st.subheader("أفضل الأسهم للمدى القصير")
-    short_cols = ["ticker", "price", "price_is_live", "rsi", "macd_hist", "above_sma20",
+    short_cols = ["ticker", "price", "price_is_live", "price_source", "rsi", "macd_hist", "above_sma20",
                   "short_term_score", "التوصية"]
     short_cols = [c for c in short_cols if c in filtered.columns]  # حماية لو عمود جديد لسه مش موجود في النسخة الشغالة
     st.dataframe(
