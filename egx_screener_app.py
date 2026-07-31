@@ -5,6 +5,7 @@ import streamlit as st
 from egx_screener import (
     EGX_TICKERS, US_TICKERS, UAE_TICKERS, MARKETS, run_screener,
     VERDICT_BUY_MIN_SHORT, VERDICT_SELL_MAX_SHORT, VERDICT_SELL_MAX_LONG,
+    TICKER_OVERRIDES, _TICKER_OVERRIDES_CSV,
 )
 
 st.set_page_config(page_title="Multi-Market Stock Screener", layout="wide")
@@ -134,6 +135,36 @@ min_avg_trade_value = st.sidebar.number_input(
     f"أقل متوسط قيمة تداول يومي مقبول ({currency_label})",
     min_value=0, value=int(default_liquidity), step=100_000,
 )
+
+st.sidebar.markdown("---")
+with st.sidebar.expander(f"🔧 رموز بديلة للأسهم الفاشلة ({len(TICKER_OVERRIDES)} مسجّل)"):
+    st.caption(
+        "بعض أسهم EGX عند Yahoo Finance ليها رمز مبني على ISIN بدل الرمز "
+        "المختصر المعتاد (مثال: ESRS.CA فعلياً محتاجة EGS3C251C013-EGP.CA "
+        "عند Yahoo). لو سهم بيفشل تحميله، دوّر عليه يدوياً على "
+        "finance.yahoo.com واكتب الرمز الصح هنا."
+    )
+    if TICKER_OVERRIDES:
+        st.dataframe(
+            pd.DataFrame(list(TICKER_OVERRIDES.items()), columns=["الرمز الأصلي", "رمز Yahoo الصحيح"]),
+            use_container_width=True, hide_index=True,
+        )
+    ov_col1, ov_col2 = st.columns(2)
+    with ov_col1:
+        ov_original = st.text_input("الرمز الأصلي (زي ESRS.CA)", key="ov_original")
+    with ov_col2:
+        ov_yahoo = st.text_input("رمز Yahoo الصحيح", key="ov_yahoo")
+    if st.button("💾 حفظ الرمز البديل"):
+        if ov_original and ov_yahoo:
+            existing = pd.read_csv(_TICKER_OVERRIDES_CSV) if os.path.exists(_TICKER_OVERRIDES_CSV) \
+                else pd.DataFrame(columns=["original_ticker", "yahoo_symbol"])
+            existing = existing[existing["original_ticker"] != ov_original.strip()]
+            new_row = pd.DataFrame([{"original_ticker": ov_original.strip(), "yahoo_symbol": ov_yahoo.strip()}])
+            pd.concat([existing, new_row], ignore_index=True).to_csv(_TICKER_OVERRIDES_CSV, index=False)
+            st.success(f"✅ اتحفظ: {ov_original} → {ov_yahoo}. أعد تشغيل التحليل عشان يتفعّل.")
+            st.rerun()
+        else:
+            st.warning("لازم تملأ الحقلين الاتنين.")
 
 run_button = st.sidebar.button("🔄 شغّل التحليل الآن", type="primary")
 
