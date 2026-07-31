@@ -2,7 +2,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from data_providers import get_provider
+from data_providers import get_provider, TwelveDataLivePrice
 
 # ---------------------------------------------------------------------------
 # 1) قائمة الأسهم: مكتوبة مباشرة هنا في الكود (223 سهم مدرج فعلياً في EGX)
@@ -289,7 +289,8 @@ def compute_verdict(row: dict, include_fundamentals: bool) -> dict:
 # 3) تحميل البيانات وتحليل سهم واحد
 # ---------------------------------------------------------------------------
 def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
-                    min_avg_trade_value: float = DEFAULT_MIN_AVG_TRADE_VALUE) -> dict | None:
+                    min_avg_trade_value: float = DEFAULT_MIN_AVG_TRADE_VALUE,
+                    td_live_price=None) -> dict | None:
     try:
         df = provider.get_price_history(ticker, period_days=HISTORY_DAYS)
     except Exception as e:
@@ -311,14 +312,25 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
 
     last_price = float(close.iloc[-1])  # افتراضياً: آخر إغلاق يومي متاح من السلسلة التاريخية
     price_is_live = False
+    price_source = "historical_close"
 
-    # نحاول نجيب سعر أقرب للحظي (delayed quote) بدل الاكتفاء بآخر إغلاق يومي.
-    # لو مش متاح (المزود مش بيدعمها أو فشل الطلب)، بنفضل مستخدمين آخر إغلاق
-    # يومي عادي - مفيش تأثير سلبي، بس مفيش تحسين.
-    live = provider.get_live_price(ticker)
-    if live.get("is_live") and live.get("price"):
-        last_price = float(live["price"])
-        price_is_live = True
+    # الأولوية 1: Twelve Data (لو المستخدم مفعّلها بـ API key) - أدق مصدر لحظي
+    # عندنا حالياً، خصوصاً للأسهم الأمريكية (مجاني ولحظي فعلاً على باقة Basic)
+    if td_live_price is not None:
+        td_result = td_live_price.get_price(ticker)
+        if td_result.get("is_live") and td_result.get("price"):
+            last_price = float(td_result["price"])
+            price_is_live = True
+            price_source = "twelvedata"
+
+    # الأولوية 2: fast_info من نفس مزود البيانات (Yahoo) - لو Twelve Data
+    # مش مفعّلة أو فشلت لسبب ما
+    if not price_is_live:
+        live = provider.get_live_price(ticker)
+        if live.get("is_live") and live.get("price"):
+            last_price = float(live["price"])
+            price_is_live = True
+            price_source = "yahoo_fast_info"
 
     last_rsi = float(rsi.iloc[-1])
     last_sma20 = float(sma20.iloc[-1])
@@ -386,6 +398,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
         "is_major_exporter": get_is_major_exporter(ticker),
         "price": round(last_price, 2),
         "price_is_live": price_is_live,
+        "price_source": price_source,
         "rsi": round(last_rsi, 1),
         "macd_hist": round(last_hist, 3),
         "above_sma20": last_price > last_sma20,
@@ -450,7 +463,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
 
 def run_screener(tickers=None, include_fundamentals=True, save_csv=True, verbose=True,
                   provider=None, provider_name="yahoo", provider_kwargs=None,
-                  min_avg_trade_value=DEFAULT_MIN_AVG_TRADE_VALUE):
+                  min_avg_trade_value=DEFAULT_MIN_AVG_TRADE_VALUE, td_live_price=None):
     if provider is None:
         provider = get_provider(provider_name, **(provider_kwargs or {}))
 
@@ -460,7 +473,8 @@ def run_screener(tickers=None, include_fundamentals=True, save_csv=True, verbose
         if verbose:
             print(f"جاري تحليل {t} ...")
         r = analyze_ticker(t, provider, include_fundamentals=include_fundamentals,
-                            min_avg_trade_value=min_avg_trade_value)
+                            min_avg_trade_value=min_avg_trade_value,
+                            td_live_price=td_live_price)
         if r:
             results.append(r)
         time.sleep(0.5)  
