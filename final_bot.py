@@ -90,6 +90,58 @@ class TwelveDataLivePrice:
             return {"price": None, "is_live": False, "error": str(e)}
 
 
+class TradingViewLivePrice:
+    """
+    مصدر سعر أقرب للحظي عبر مكتبة tradingview_ta - "unofficial API wrapper"
+    (مش منتج معتمد رسمياً من TradingView، بيحاكي نفس الطلبات اللي المتصفح
+    بيبعتها لما تفتح شارت على الموقع). التغطية لـ EGX أقوى بكتير من Yahoo
+    عادةً، وده مجاني بالكامل من غير API key.
+
+    مخاطر معروفة (اقرأها قبل الاعتماد عليها بكثافة):
+    - مكتبة غير رسمية - ممكن تتعطل فجأة لو TradingView غيّرت الـ endpoints
+      الداخلية بتاعتها من غير سابق إنذار.
+    - الاستخدام المكثف (مسح مئات الأسهم بشكل متكرر) ممكن يخالف شروط استخدام
+      TradingView.
+    """
+
+    def __init__(self):
+        try:
+            from tradingview_ta import TA_Handler, Interval
+        except ImportError:
+            raise SystemExit(
+                "محتاج تركيب المكتبة الأول:\n"
+                "pip install tradingview_ta --break-system-packages"
+            )
+        self._TA_Handler = TA_Handler
+        self._interval = Interval.INTERVAL_1_DAY
+
+    def _resolve_market(self, ticker: str) -> dict:
+        """يحوّل رمز Yahoo (زي COMI.CA) لصيغة TradingView (screener/exchange/symbol)."""
+        if ticker.endswith(".CA"):
+            return {"screener": "egypt", "exchanges": ["EGX"], "symbol": ticker[:-3]}
+        if ticker.endswith(".AE"):
+            return {"screener": "uae", "exchanges": ["DFM", "ADX"], "symbol": ticker[:-3]}
+        return {"screener": "america", "exchanges": ["NASDAQ", "NYSE"], "symbol": ticker}
+
+    def get_price(self, ticker: str) -> dict:
+        market = self._resolve_market(ticker)
+        last_error = None
+        for exch in market["exchanges"]:
+            try:
+                handler = self._TA_Handler(
+                    symbol=market["symbol"], screener=market["screener"],
+                    exchange=exch, interval=self._interval,
+                )
+                analysis = handler.get_analysis()
+                price = analysis.indicators.get("close")
+                if price:
+                    return {"price": float(price), "is_live": True, "error": None}
+            except Exception as e:
+                last_error = f"{exch}: {e}"
+                continue
+        return {"price": None, "is_live": False, "error": last_error or "فشلت كل البورصات المجرَّبة"}
+
+
 def get_live_price_yahoo(ticker: str) -> dict:
     """
     سعر أقرب للحظي (delayed quote) من yfinance عبر fast_info - أسرع وأخف من
@@ -134,6 +186,21 @@ if enable_td_live:
     if td_api_key:
         td_live_price = TwelveDataLivePrice(api_key=td_api_key)
 
+enable_tv_live = st.sidebar.checkbox("فعّل TradingView لسعر أقرب للحظي (مجاني، مصدر غير رسمي)", value=False)
+tv_live_price = None
+if enable_tv_live:
+    st.sidebar.caption(
+        "🆓 **مجاني بالكامل ومن غير API key.** تغطيته لمصر أقوى بكتير من "
+        "Yahoo عادةً. **لكن**: مكتبة `tradingview_ta` غير رسمية (unofficial) "
+        "- ممكن تتعطل فجأة لو TradingView غيّرت الـ endpoints الداخلية "
+        "بتاعتها، والاستخدام المكثف ممكن يخالف شروط استخدامهم."
+    )
+    try:
+        tv_live_price = TradingViewLivePrice()
+    except SystemExit as e:
+        st.sidebar.error(str(e))
+        tv_live_price = None
+
 st.sidebar.markdown("---")
 with st.sidebar.expander(f"🔧 رموز بديلة للأسهم الفاشلة ({len(TICKER_OVERRIDES)} مسجّل)"):
     st.caption(
@@ -166,13 +233,18 @@ with st.sidebar.expander(f"🔧 رموز بديلة للأسهم الفاشلة 
 
 def get_display_price(ticker: str, fallback_price: float) -> dict:
     """
-    يحاول يجيب سعر أقرب للحظي بالأولوية: Twelve Data (لو مفعّلة) -> Yahoo
+    يحاول يجيب سعر أقرب للحظي بالأولوية: Twelve Data -> TradingView -> Yahoo
     fast_info -> السعر الاحتياطي (آخر إغلاق يومي من البيانات المُحمّلة أصلاً).
     """
     if td_live_price is not None:
         td_result = td_live_price.get_price(ticker)
         if td_result.get("is_live") and td_result.get("price"):
             return {"price": td_result["price"], "source": "twelvedata"}
+
+    if tv_live_price is not None:
+        tv_result = tv_live_price.get_price(ticker)
+        if tv_result.get("is_live") and tv_result.get("price"):
+            return {"price": tv_result["price"], "source": "tradingview"}
 
     live = get_live_price_yahoo(ticker)
     if live.get("is_live") and live.get("price"):
@@ -1171,6 +1243,7 @@ with tab1:
 
                     source_labels = {
                         "twelvedata": "🟢 Twelve Data (لحظي)",
+                        "tradingview": "🟢 TradingView (لحظي، مصدر غير رسمي)",
                         "yahoo_fast_info": "🟡 Yahoo (شبه لحظي)",
                         "historical_close": "⚪ آخر إغلاق يومي (مش لحظي)",
                     }
