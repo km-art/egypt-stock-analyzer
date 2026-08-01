@@ -293,6 +293,67 @@ class TwelveDataLivePrice:
             return {"price": None, "is_live": False, "error": str(e)}
 
 
+# ---------------------------------------------------------------------------
+# 5) TradingView (tradingview_ta) - مصدر سعر لحظي إضافي، غير رسمي، مجاني
+# ---------------------------------------------------------------------------
+class TradingViewLivePrice:
+    """
+    مصدر سعر أقرب للحظي عبر مكتبة tradingview_ta - "unofficial API wrapper"
+    (مش منتج معتمد رسمياً من TradingView، بيحاكي نفس الطلبات اللي المتصفح
+    بيبعتها لما تفتح شارت على الموقع). التغطية لـ EGX أقوى بكتير من Yahoo
+    عادةً، وده مجاني بالكامل من غير API key.
+
+    مخاطر معروفة (اقرأها قبل الاعتماد عليها بكثافة):
+    - مكتبة غير رسمية - ممكن تتعطل فجأة لو TradingView غيّرت الـ endpoints
+      الداخلية بتاعتها من غير سابق إنذار.
+    - الاستخدام المكثف (مسح مئات الأسهم بشكل متكرر) ممكن يخالف شروط استخدام
+      TradingView.
+      
+    الاستخدام:
+        tv = TradingViewLivePrice()
+        result = tv.get_price("COMI.CA")  # أو "AAPL" أو "EMAAR.AE"
+    """
+
+    def __init__(self):
+        try:
+            from tradingview_ta import TA_Handler, Interval
+        except ImportError:
+            raise SystemExit(
+                "محتاج تركيب المكتبة الأول:\n"
+                "pip install tradingview_ta --break-system-packages"
+            )
+        self._TA_Handler = TA_Handler
+        self._interval = Interval.INTERVAL_1_DAY
+
+    def _resolve_market(self, ticker: str) -> dict:
+        """يحوّل رمز Yahoo (زي COMI.CA) لصيغة TradingView (screener/exchange/symbol)."""
+        if ticker.endswith(".CA"):
+            return {"screener": "egypt", "exchanges": ["EGX"], "symbol": ticker[:-3]}
+        if ticker.endswith(".AE"):
+            # DFM وADX مدمجين بصيغة .AE عندنا - TradingView بيفرقهم، فنجرب الاتنين
+            return {"screener": "uae", "exchanges": ["DFM", "ADX"], "symbol": ticker[:-3]}
+        # أمريكا: مفيش لاحقة عندنا، فنجرب أشهر بورصتين
+        return {"screener": "america", "exchanges": ["NASDAQ", "NYSE"], "symbol": ticker}
+
+    def get_price(self, ticker: str) -> dict:
+        market = self._resolve_market(ticker)
+        last_error = None
+        for exch in market["exchanges"]:
+            try:
+                handler = self._TA_Handler(
+                    symbol=market["symbol"], screener=market["screener"],
+                    exchange=exch, interval=self._interval,
+                )
+                analysis = handler.get_analysis()
+                price = analysis.indicators.get("close")
+                if price:
+                    return {"price": float(price), "is_live": True, "error": None}
+            except Exception as e:
+                last_error = f"{exch}: {e}"
+                continue
+        return {"price": None, "is_live": False, "error": last_error or "فشلت كل البورصات المجرَّبة"}
+
+
 def get_provider(name: str = "yahoo", **kwargs) -> DataProvider:
     name = name.lower()
     if name == "yahoo":
