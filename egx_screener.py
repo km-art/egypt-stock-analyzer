@@ -3,7 +3,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from data_providers import get_provider, TwelveDataLivePrice
+from data_providers import get_provider, TwelveDataLivePrice, TradingViewLivePrice
 
 # ---------------------------------------------------------------------------
 # 0) رموز بديلة (Ticker Overrides)
@@ -329,7 +329,7 @@ def compute_verdict(row: dict, include_fundamentals: bool) -> dict:
 # ---------------------------------------------------------------------------
 def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
                     min_avg_trade_value: float = DEFAULT_MIN_AVG_TRADE_VALUE,
-                    td_live_price=None) -> dict | None:
+                    td_live_price=None, tv_live_price=None) -> dict | None:
     yahoo_symbol = resolve_symbol(ticker)  # ممكن يبقى مختلف عن ticker لو فيه رمز بديل مسجّل
     try:
         df = provider.get_price_history(yahoo_symbol, period_days=HISTORY_DAYS)
@@ -363,8 +363,17 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
             price_is_live = True
             price_source = "twelvedata"
 
-    # الأولوية 2: fast_info من نفس مزود البيانات (Yahoo) - لو Twelve Data
-    # مش مفعّلة أو فشلت لسبب ما
+    # الأولوية 2: TradingView (لو المستخدم مفعّلها) - مجاني، غير رسمي، وتغطيته
+    # لمصر أقوى بكتير من Yahoo عادةً
+    if not price_is_live and tv_live_price is not None:
+        tv_result = tv_live_price.get_price(ticker)
+        if tv_result.get("is_live") and tv_result.get("price"):
+            last_price = float(tv_result["price"])
+            price_is_live = True
+            price_source = "tradingview"
+
+    # الأولوية 3: fast_info من نفس مزود البيانات (Yahoo) - لو الاتنين اللي فوق
+    # مش مفعّلين أو فشلوا لسبب ما
     if not price_is_live:
         live = provider.get_live_price(yahoo_symbol)
         if live.get("is_live") and live.get("price"):
@@ -503,7 +512,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
 
 def run_screener(tickers=None, include_fundamentals=True, save_csv=True, verbose=True,
                   provider=None, provider_name="yahoo", provider_kwargs=None,
-                  min_avg_trade_value=DEFAULT_MIN_AVG_TRADE_VALUE, td_live_price=None):
+                  min_avg_trade_value=DEFAULT_MIN_AVG_TRADE_VALUE, td_live_price=None, tv_live_price=None):
     if provider is None:
         provider = get_provider(provider_name, **(provider_kwargs or {}))
 
@@ -514,7 +523,7 @@ def run_screener(tickers=None, include_fundamentals=True, save_csv=True, verbose
             print(f"جاري تحليل {t} ...")
         r = analyze_ticker(t, provider, include_fundamentals=include_fundamentals,
                             min_avg_trade_value=min_avg_trade_value,
-                            td_live_price=td_live_price)
+                            td_live_price=td_live_price, tv_live_price=tv_live_price)
         if r:
             results.append(r)
         time.sleep(0.5)  
