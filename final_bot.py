@@ -1,3 +1,4 @@
+import os
 import time
 import streamlit as st
 import yfinance as yf
@@ -17,6 +18,94 @@ BATCH_SIZE = 30       # عدد الأسهم في كل طلب تحميل - تقس
 BATCH_DELAY = 1.5     # ثواني انتظار بين كل دفعة وأخرى
 CROSS_LOOKBACK = 3    # كام يوم نرجع بيهم للخلف لاكتشاف "تقاطع جديد" (نفس القيمة تستخدم في التاب الأول والثاني)
 
+# ---------------------------------------------------------------------------
+# رموز بديلة (Ticker Overrides)
+# ---------------------------------------------------------------------------
+# بعض أسهم EGX عند Yahoo Finance ليها رمز مبني على ISIN بدل الرمز المختصر
+# المعتاد - مثلاً "حديد عز" رمزها المعتاد ESRS.CA بس Yahoo فعلياً محتاج
+# EGS3C251C013-EGP.CA. الديكشنري ده بيربط الرمز المعتاد بالرمز الصح اللي
+# Yahoo بيفهمه، من غير ما نغيّر الرمز المعروض في النتائج.
+BUILT_IN_TICKER_OVERRIDES = {
+    "ESRS.CA": "EGS3C251C013-EGP.CA",  # حديد عز
+}
+
+_TICKER_OVERRIDES_CSV = "ticker_overrides.csv"
+
+
+def load_ticker_overrides(csv_path: str = _TICKER_OVERRIDES_CSV) -> dict:
+    """يدمج الرموز البديلة المدمجة في الكود + أي رموز أضافها المستخدم عبر الواجهة."""
+    overrides = dict(BUILT_IN_TICKER_OVERRIDES)
+    if os.path.exists(csv_path):
+        try:
+            df = pd.read_csv(csv_path)
+            overrides.update(dict(zip(df["original_ticker"], df["yahoo_symbol"])))
+        except Exception as e:
+            print(f"⚠️  تعذر تحميل {csv_path} ({e}).")
+    return overrides
+
+
+TICKER_OVERRIDES = load_ticker_overrides()
+
+
+def resolve_symbol(ticker: str) -> str:
+    """يرجع الرمز اللي فعلاً هيتبعت لـ Yahoo - نفس الرمز الأصلي لو مفيش بديل مسجّل."""
+    return TICKER_OVERRIDES.get(ticker, ticker)
+
+
+# ---------------------------------------------------------------------------
+# Twelve Data - مصدر منفصل ومخصص بس لسعر أقرب للحظي (اختياري، مش بديل ليفنانس)
+# ---------------------------------------------------------------------------
+class TwelveDataLivePrice:
+    """
+    مصدر سعر لحظي إضافي (اختياري) - منفصل تماماً عن yfinance، بيُستخدم بس
+    لتحسين حقل السعر المعروض. التحليل الفني بيفضل معتمد بالكامل على yfinance.
+
+    التغطية حسب باقة Twelve Data (twelvedata.com/pricing):
+    - أمريكا (S&P 500): لحظي ومجاني بالكامل على باقة Basic.
+    - مصر (EGX): محتاجة باقة Pro المدفوعة على الأقل (99$/شهر)، وشكل رمز
+      السهم عندهم مختلف عن Yahoo أحياناً - تأكد بنفسك من الرمز الصح.
+    - الإمارات: التغطية غير مؤكدة.
+    """
+    BASE_URL = "https://api.twelvedata.com"
+
+    def __init__(self, api_key: str | None = None):
+        self.api_key = api_key or os.environ.get("TWELVEDATA_API_KEY")
+
+    def get_price(self, symbol: str) -> dict:
+        if not self.api_key:
+            return {"price": None, "is_live": False, "error": "مفيش API key"}
+        try:
+            resp = requests.get(
+                f"{self.BASE_URL}/price",
+                params={"symbol": symbol, "apikey": self.api_key},
+                timeout=10,
+            )
+            data = resp.json()
+            if "price" in data:
+                return {"price": float(data["price"]), "is_live": True, "error": None}
+            return {"price": None, "is_live": False, "error": data.get("message", "استجابة غير متوقعة")}
+        except requests.exceptions.Timeout:
+            return {"price": None, "is_live": False, "error": "Timeout"}
+        except Exception as e:
+            return {"price": None, "is_live": False, "error": str(e)}
+
+
+def get_live_price_yahoo(ticker: str) -> dict:
+    """
+    سعر أقرب للحظي (delayed quote) من yfinance عبر fast_info - أسرع وأخف من
+    .info الكامل. مش لحظي 100% (تأخير Yahoo المعتاد)، وممكن يفشل لأسهم EGX
+    الأقل تغطية. بيرجع لآخر إغلاق يومي تلقائياً لو فشل.
+    """
+    try:
+        fast = yf.Ticker(resolve_symbol(ticker)).fast_info
+        price = fast.get("last_price") if hasattr(fast, "get") else getattr(fast, "last_price", None)
+        if price is not None and price > 0:
+            return {"price": float(price), "is_live": True}
+    except Exception as e:
+        print(f"⚠️  فشل جلب السعر شبه اللحظي لـ {ticker}: {type(e).__name__}: {e}")
+    return {"price": None, "is_live": False}
+
+
 # القراءة التلقائية من Streamlit Secrets كخيار احتياطي
 try:
     default_token = st.secrets.get("TELEGRAM_TOKEN", "")
@@ -30,6 +119,67 @@ except Exception:
 st.sidebar.header("⚙️ إعدادات إشعارات الموبايل (تليجرام)")
 TELEGRAM_TOKEN = st.sidebar.text_input("أدخل Token البوت:", value=default_token, type="password")
 TELEGRAM_CHAT_ID = st.sidebar.text_input("أدخل Chat ID الخاص بك:", value=default_chat_id)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🕐 سعر لحظي إضافي (اختياري)")
+enable_td_live = st.sidebar.checkbox("فعّل Twelve Data لسعر أقرب للحظي", value=False)
+td_live_price = None
+if enable_td_live:
+    st.sidebar.caption(
+        "🇺🇸 مجاني ولحظي فعلاً للأسهم الأمريكية (باقة Basic). "
+        "🇪🇬 مصر محتاجة باقة Pro المدفوعة (99$/شهر على الأقل)، وشكل رمز "
+        "السهم عندهم مختلف عن Yahoo أحياناً."
+    )
+    td_api_key = st.sidebar.text_input("Twelve Data API Key", type="password", key="td_api_key")
+    if td_api_key:
+        td_live_price = TwelveDataLivePrice(api_key=td_api_key)
+
+st.sidebar.markdown("---")
+with st.sidebar.expander(f"🔧 رموز بديلة للأسهم الفاشلة ({len(TICKER_OVERRIDES)} مسجّل)"):
+    st.caption(
+        "بعض أسهم EGX عند Yahoo Finance ليها رمز مبني على ISIN بدل الرمز "
+        "المختصر المعتاد (مثال: ESRS.CA فعلياً محتاجة EGS3C251C013-EGP.CA). "
+        "لو سهم بيفشل تحميله، دوّر عليه يدوياً على finance.yahoo.com واكتب "
+        "الرمز الصح هنا."
+    )
+    if TICKER_OVERRIDES:
+        st.dataframe(
+            pd.DataFrame(list(TICKER_OVERRIDES.items()), columns=["الرمز الأصلي", "رمز Yahoo الصحيح"]),
+            use_container_width=True, hide_index=True,
+        )
+    ov_col1, ov_col2 = st.columns(2)
+    with ov_col1:
+        ov_original = st.text_input("الرمز الأصلي (زي ESRS.CA)", key="ov_original_fb")
+    with ov_col2:
+        ov_yahoo = st.text_input("رمز Yahoo الصحيح", key="ov_yahoo_fb")
+    if st.button("💾 حفظ الرمز البديل", key="save_override_fb"):
+        if ov_original and ov_yahoo:
+            existing = pd.read_csv(_TICKER_OVERRIDES_CSV) if os.path.exists(_TICKER_OVERRIDES_CSV) \
+                else pd.DataFrame(columns=["original_ticker", "yahoo_symbol"])
+            existing = existing[existing["original_ticker"] != ov_original.strip()]
+            new_row = pd.DataFrame([{"original_ticker": ov_original.strip(), "yahoo_symbol": ov_yahoo.strip()}])
+            pd.concat([existing, new_row], ignore_index=True).to_csv(_TICKER_OVERRIDES_CSV, index=False)
+            st.success(f"✅ اتحفظ: {ov_original} → {ov_yahoo}. أعد تشغيل التحليل عشان يتفعّل.")
+            st.rerun()
+        else:
+            st.warning("لازم تملأ الحقلين الاتنين.")
+
+def get_display_price(ticker: str, fallback_price: float) -> dict:
+    """
+    يحاول يجيب سعر أقرب للحظي بالأولوية: Twelve Data (لو مفعّلة) -> Yahoo
+    fast_info -> السعر الاحتياطي (آخر إغلاق يومي من البيانات المُحمّلة أصلاً).
+    """
+    if td_live_price is not None:
+        td_result = td_live_price.get_price(ticker)
+        if td_result.get("is_live") and td_result.get("price"):
+            return {"price": td_result["price"], "source": "twelvedata"}
+
+    live = get_live_price_yahoo(ticker)
+    if live.get("is_live") and live.get("price"):
+        return {"price": live["price"], "source": "yahoo_fast_info"}
+
+    return {"price": fallback_price, "source": "historical_close"}
+
 
 def send_telegram_alert(message):
     """
@@ -723,7 +873,7 @@ def fetch_fundamentals(ticker: str) -> dict:
         "eps": None, "book_value_per_share": None,
     }
     try:
-        info = yf.Ticker(ticker).info
+        info = yf.Ticker(resolve_symbol(ticker)).info
     except Exception:
         return empty
 
@@ -895,7 +1045,7 @@ def score_fundamentals(f: dict) -> int:
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_single_stock(ticker: str, period: str = "100d"):
     """تحميل بيانات سهم واحد مع تخزين مؤقت (cache) لمدة 5 دقايق لتقليل الطلبات المكررة."""
-    return yf.download(ticker, period=period, progress=False, group_by='ticker')
+    return yf.download(resolve_symbol(ticker), period=period, progress=False, group_by='ticker')
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -916,17 +1066,19 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
 
     for i in range(0, len(tickers), BATCH_SIZE):
         batch = tickers[i:i + BATCH_SIZE]
+        resolved_batch = [resolve_symbol(t) for t in batch]
         try:
-            data = yf.download(batch, period=period, progress=False, group_by='ticker', threads=True)
+            data = yf.download(resolved_batch, period=period, progress=False, group_by='ticker', threads=True)
         except Exception:
             failed.extend(batch)
             continue
 
         for t in batch:
             try:
-                df_t = data[t] if len(batch) > 1 else data
+                rt = resolve_symbol(t)
+                df_t = data[rt] if len(batch) > 1 else data
                 if df_t is not None and not df_t.dropna(how='all').empty:
-                    all_frames[t] = df_t
+                    all_frames[t] = df_t  # نخزّن بالرمز الأصلي عشان باقي الكود يلاقيه
                 else:
                     failed.append(t)
             except Exception:
@@ -941,7 +1093,7 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
     if failed:
         for t in failed:
             try:
-                df_t = yf.download(t, period=period, progress=False, group_by='ticker')
+                df_t = yf.download(resolve_symbol(t), period=period, progress=False, group_by='ticker')
                 if df_t is not None and not df_t.dropna(how='all').empty:
                     all_frames[t] = df_t
                 else:
@@ -980,7 +1132,9 @@ with tab1:
                     last_row = df.iloc[-1]
                     prev_row = df.iloc[-CROSS_LOOKBACK]
                     
-                    price = float(last_row['Close'].squeeze())
+                    price_hist_close = float(last_row['Close'].squeeze())
+                    price_info = get_display_price(ticker_input, price_hist_close)
+                    price = price_info["price"]
                     ema9 = float(last_row['EMA9'].squeeze())
                     ema21 = float(last_row['EMA21'].squeeze())
                     rsi = float(last_row['RSI_14'].squeeze())
@@ -1009,10 +1163,18 @@ with tab1:
                     st.markdown(f'<div style="background-color:{color}; padding:20px; border-radius:10px; text-align:center; margin-bottom:20px;"><h2 style="color:white; margin:0;">القرار الحالي لـ {ticker_input}: {decision}</h2></div>', unsafe_allow_html=True)
                     
                     c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("السعر الحالي", f"{price:.2f} ج.م")
+                    price_currency = get_currency(ticker_input)
+                    c1.metric("السعر الحالي", f"{price:.2f} {price_currency}")
                     c2.metric("مؤشر الزخم RSI", f"{rsi:.1f}")
                     c3.metric("مؤشر السيولة MFI", f"{mfi:.1f}")
                     c4.metric("حجم تداول اليوم (فوليوم)", f"{vol:,.0f}")
+
+                    source_labels = {
+                        "twelvedata": "🟢 Twelve Data (لحظي)",
+                        "yahoo_fast_info": "🟡 Yahoo (شبه لحظي)",
+                        "historical_close": "⚪ آخر إغلاق يومي (مش لحظي)",
+                    }
+                    st.caption(f"مصدر السعر: {source_labels.get(price_info['source'], price_info['source'])}")
 
                     # --- التحليل المالي الأساسي ---
                     fundamentals = fetch_fundamentals(ticker_input)
