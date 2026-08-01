@@ -119,6 +119,22 @@ if enable_td_live:
         from data_providers import TwelveDataLivePrice
         td_live_price = TwelveDataLivePrice(api_key=td_api_key)
 
+enable_tv_live = st.sidebar.checkbox("فعّل TradingView لسعر أقرب للحظي (مجاني، مصدر غير رسمي)", value=False)
+tv_live_price = None
+if enable_tv_live:
+    st.sidebar.caption(
+        "🆓 **مجاني بالكامل ومن غير API key.** تغطيته لمصر أقوى بكتير من "
+        "Yahoo عادةً. **لكن**: مكتبة `tradingview_ta` غير رسمية (unofficial) "
+        "- ممكن تتعطل فجأة لو TradingView غيّرت الـ endpoints الداخلية "
+        "بتاعتها، والاستخدام المكثف ممكن يخالف شروط استخدامهم."
+    )
+    try:
+        from data_providers import TradingViewLivePrice
+        tv_live_price = TradingViewLivePrice()
+    except SystemExit as e:
+        st.sidebar.error(str(e))
+        tv_live_price = None
+
 st.sidebar.header("💧 حد السيولة")
 if len(selected_markets) == 1:
     _m = MARKETS[selected_markets[0]]
@@ -186,6 +202,7 @@ if run_button:
                 provider_kwargs=provider_kwargs,
                 min_avg_trade_value=min_avg_trade_value,
                 td_live_price=td_live_price,
+                tv_live_price=tv_live_price,
             )
         except Exception as e:
             st.error(f"حصل خطأ أثناء التحليل: {e}")
