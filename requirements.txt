@@ -2,3 +2,6 @@ streamlit
 yfinance
 pandas
 plotly
+numpy
+requests
+tradingview_ta
