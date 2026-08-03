@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import pandas as pd
 import streamlit as st
 
@@ -6,6 +7,7 @@ from egx_screener import (
     EGX_TICKERS, US_TICKERS, UAE_TICKERS, MARKETS, run_screener,
     VERDICT_BUY_MIN_SHORT, VERDICT_SELL_MAX_SHORT, VERDICT_SELL_MAX_LONG,
     TICKER_OVERRIDES, _TICKER_OVERRIDES_CSV,
+    MANUAL_PRICES, _MANUAL_PRICES_CSV,
 )
 
 st.set_page_config(page_title="Multi-Market Stock Screener", layout="wide")
@@ -181,6 +183,54 @@ with st.sidebar.expander(f"🔧 رموز بديلة للأسهم الفاشلة 
             st.rerun()
         else:
             st.warning("لازم تملأ الحقلين الاتنين.")
+
+st.sidebar.markdown("---")
+with st.sidebar.expander(f"✍️ سعر يدوي لسهم بعينه ({len(MANUAL_PRICES)} مسجّل)"):
+    st.caption(
+        "لو عندك سعر أدق من تطبيق وسيطك أو مصدر تثق فيه، دخّله هنا لسهم "
+        "معين — هياخد **أعلى أولوية** فوق أي مصدر آلي (Twelve Data، "
+        "TradingView، Yahoo) لحد ما تمسحه بنفسك."
+    )
+    if MANUAL_PRICES:
+        mp_display = pd.DataFrame([
+            {"الرمز": t, "السعر": v["price"], "آخر تحديث": v["updated_at"]}
+            for t, v in MANUAL_PRICES.items()
+        ])
+        st.dataframe(mp_display, use_container_width=True, hide_index=True)
+
+    mp_col1, mp_col2 = st.columns(2)
+    with mp_col1:
+        mp_ticker = st.text_input("رمز السهم (زي COMI.CA)", key="mp_ticker")
+    with mp_col2:
+        mp_price = st.number_input("السعر", min_value=0.0, step=0.01, key="mp_price")
+
+    mp_save_col, mp_clear_col = st.columns(2)
+    with mp_save_col:
+        if st.button("💾 حفظ السعر اليدوي"):
+            if mp_ticker and mp_price > 0:
+                existing = pd.read_csv(_MANUAL_PRICES_CSV) if os.path.exists(_MANUAL_PRICES_CSV) \
+                    else pd.DataFrame(columns=["ticker", "price", "updated_at"])
+                existing = existing[existing["ticker"] != mp_ticker.strip()]
+                new_row = pd.DataFrame([{
+                    "ticker": mp_ticker.strip(),
+                    "price": mp_price,
+                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                }])
+                pd.concat([existing, new_row], ignore_index=True).to_csv(_MANUAL_PRICES_CSV, index=False)
+                st.success(f"✅ اتحفظ سعر {mp_ticker} = {mp_price}")
+                st.rerun()
+            else:
+                st.warning("لازم تدخل رمز السهم وسعر أكبر من صفر.")
+    with mp_clear_col:
+        if st.button("🗑️ مسح سعر يدوي"):
+            if mp_ticker and os.path.exists(_MANUAL_PRICES_CSV):
+                existing = pd.read_csv(_MANUAL_PRICES_CSV)
+                existing = existing[existing["ticker"] != mp_ticker.strip()]
+                existing.to_csv(_MANUAL_PRICES_CSV, index=False)
+                st.success(f"🗑️ اتمسح سعر {mp_ticker} اليدوي")
+                st.rerun()
+            else:
+                st.warning("اكتب رمز السهم اللي عايز تمسح سعره اليدوي.")
 
 run_button = st.sidebar.button("🔄 شغّل التحليل الآن", type="primary")
 
