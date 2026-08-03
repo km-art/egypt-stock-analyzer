@@ -44,6 +44,33 @@ def resolve_symbol(ticker: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# 0ب) سعر يدوي (Manual Price Override) - أعلى أولوية في سلسلة مصادر السعر
+# ---------------------------------------------------------------------------
+# لو عندك سعر لحظي فعلي من تطبيق وسيطك أو أي مصدر تثق فيه، تقدر تدخله يدوياً
+# لسهم بعينه - وهو هياخد أولوية فوق كل مصادر الأتمتة (Twelve Data,
+# TradingView, Yahoo). مفيد لما تحتاج تتأكد من دقة سعر سهم معين قبل قرار.
+_MANUAL_PRICES_CSV = "manual_prices.csv"
+
+
+def load_manual_prices(csv_path: str = _MANUAL_PRICES_CSV) -> dict:
+    """يرجع dict: ticker -> {"price": float, "updated_at": str}"""
+    if not os.path.exists(csv_path):
+        return {}
+    try:
+        df = pd.read_csv(csv_path)
+        return {
+            row["ticker"]: {"price": float(row["price"]), "updated_at": str(row["updated_at"])}
+            for _, row in df.iterrows()
+        }
+    except Exception as e:
+        print(f"⚠️  تعذر تحميل {csv_path} ({e}).")
+        return {}
+
+
+MANUAL_PRICES = load_manual_prices()
+
+
+# ---------------------------------------------------------------------------
 # 1) قائمة الأسهم: مكتوبة مباشرة هنا في الكود (223 سهم مدرج فعلياً في EGX)
 #    بدل ما تتحمّل من ملف CSV خارجي - عشان الكود يشتغل بمفرده من غير ما
 #    تحتاج ترفع ملف إضافي منفصل مع كل نشر. لو عايز تضيف/تشيل سهم، عدّل
@@ -354,9 +381,17 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
     price_is_live = False
     price_source = "historical_close"
 
+    # الأولوية 0: سعر أدخلته إنت يدوياً - أعلى أولوية من أي مصدر آلي، لأنك
+    # إنت اللي تأكدت منه بنفسك
+    manual_entry = MANUAL_PRICES.get(ticker)
+    if manual_entry is not None:
+        last_price = float(manual_entry["price"])
+        price_is_live = True
+        price_source = "manual"
+
     # الأولوية 1: Twelve Data (لو المستخدم مفعّلها بـ API key) - أدق مصدر لحظي
     # عندنا حالياً، خصوصاً للأسهم الأمريكية (مجاني ولحظي فعلاً على باقة Basic)
-    if td_live_price is not None:
+    if not price_is_live and td_live_price is not None:
         td_result = td_live_price.get_price(ticker)
         if td_result.get("is_live") and td_result.get("price"):
             last_price = float(td_result["price"])
@@ -448,6 +483,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
         "price": round(last_price, 2),
         "price_is_live": price_is_live,
         "price_source": price_source,
+        "manual_price_updated_at": manual_entry["updated_at"] if manual_entry else None,
         "rsi": round(last_rsi, 1),
         "macd_hist": round(last_hist, 3),
         "above_sma20": last_price > last_sma20,
