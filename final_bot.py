@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -50,6 +51,33 @@ TICKER_OVERRIDES = load_ticker_overrides()
 def resolve_symbol(ticker: str) -> str:
     """يرجع الرمز اللي فعلاً هيتبعت لـ Yahoo - نفس الرمز الأصلي لو مفيش بديل مسجّل."""
     return TICKER_OVERRIDES.get(ticker, ticker)
+
+
+# ---------------------------------------------------------------------------
+# سعر يدوي (Manual Price Override) - أعلى أولوية في سلسلة مصادر السعر
+# ---------------------------------------------------------------------------
+# لو عندك سعر لحظي فعلي من تطبيق وسيطك أو أي مصدر تثق فيه، تقدر تدخله يدوياً
+# لسهم بعينه - وهو هياخد أولوية فوق كل مصادر الأتمتة (Twelve Data,
+# TradingView, Yahoo). مفيد لما تحتاج تتأكد من دقة سعر سهم معين قبل قرار.
+_MANUAL_PRICES_CSV = "manual_prices.csv"
+
+
+def load_manual_prices(csv_path: str = _MANUAL_PRICES_CSV) -> dict:
+    """يرجع dict: ticker -> {"price": float, "updated_at": str}"""
+    if not os.path.exists(csv_path):
+        return {}
+    try:
+        df = pd.read_csv(csv_path)
+        return {
+            row["ticker"]: {"price": float(row["price"]), "updated_at": str(row["updated_at"])}
+            for _, row in df.iterrows()
+        }
+    except Exception as e:
+        print(f"⚠️  تعذر تحميل {csv_path} ({e}).")
+        return {}
+
+
+MANUAL_PRICES = load_manual_prices()
 
 
 # ---------------------------------------------------------------------------
@@ -231,11 +259,65 @@ with st.sidebar.expander(f"🔧 رموز بديلة للأسهم الفاشلة 
         else:
             st.warning("لازم تملأ الحقلين الاتنين.")
 
+st.sidebar.markdown("---")
+with st.sidebar.expander(f"✍️ سعر يدوي لسهم بعينه ({len(MANUAL_PRICES)} مسجّل)"):
+    st.caption(
+        "لو عندك سعر أدق من تطبيق وسيطك أو مصدر تثق فيه، دخّله هنا لسهم "
+        "معين — هياخد **أعلى أولوية** فوق أي مصدر آلي (Twelve Data، "
+        "TradingView، Yahoo) لحد ما تمسحه بنفسك."
+    )
+    if MANUAL_PRICES:
+        mp_display = pd.DataFrame([
+            {"الرمز": t, "السعر": v["price"], "آخر تحديث": v["updated_at"]}
+            for t, v in MANUAL_PRICES.items()
+        ])
+        st.dataframe(mp_display, use_container_width=True, hide_index=True)
+
+    mp_col1, mp_col2 = st.columns(2)
+    with mp_col1:
+        mp_ticker = st.text_input("رمز السهم (زي COMI.CA)", key="mp_ticker_fb")
+    with mp_col2:
+        mp_price = st.number_input("السعر", min_value=0.0, step=0.01, key="mp_price_fb")
+
+    mp_save_col, mp_clear_col = st.columns(2)
+    with mp_save_col:
+        if st.button("💾 حفظ السعر اليدوي", key="save_manual_price_fb"):
+            if mp_ticker and mp_price > 0:
+                existing = pd.read_csv(_MANUAL_PRICES_CSV) if os.path.exists(_MANUAL_PRICES_CSV) \
+                    else pd.DataFrame(columns=["ticker", "price", "updated_at"])
+                existing = existing[existing["ticker"] != mp_ticker.strip()]
+                new_row = pd.DataFrame([{
+                    "ticker": mp_ticker.strip(),
+                    "price": mp_price,
+                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                }])
+                pd.concat([existing, new_row], ignore_index=True).to_csv(_MANUAL_PRICES_CSV, index=False)
+                st.success(f"✅ اتحفظ سعر {mp_ticker} = {mp_price}")
+                st.rerun()
+            else:
+                st.warning("لازم تدخل رمز السهم وسعر أكبر من صفر.")
+    with mp_clear_col:
+        if st.button("🗑️ مسح سعر يدوي", key="clear_manual_price_fb"):
+            if mp_ticker and os.path.exists(_MANUAL_PRICES_CSV):
+                existing = pd.read_csv(_MANUAL_PRICES_CSV)
+                existing = existing[existing["ticker"] != mp_ticker.strip()]
+                existing.to_csv(_MANUAL_PRICES_CSV, index=False)
+                st.success(f"🗑️ اتمسح سعر {mp_ticker} اليدوي")
+                st.rerun()
+            else:
+                st.warning("اكتب رمز السهم اللي عايز تمسح سعره اليدوي.")
+
 def get_display_price(ticker: str, fallback_price: float) -> dict:
     """
-    يحاول يجيب سعر أقرب للحظي بالأولوية: Twelve Data -> TradingView -> Yahoo
-    fast_info -> السعر الاحتياطي (آخر إغلاق يومي من البيانات المُحمّلة أصلاً).
+    يحاول يجيب سعر أقرب للحظي بالأولوية: سعر يدوي (إنت أدخلته) -> Twelve
+    Data -> TradingView -> Yahoo fast_info -> السعر الاحتياطي (آخر إغلاق
+    يومي من البيانات المُحمّلة أصلاً).
     """
+    manual_entry = MANUAL_PRICES.get(ticker)
+    if manual_entry is not None:
+        return {"price": manual_entry["price"], "source": "manual",
+                "updated_at": manual_entry["updated_at"]}
+
     if td_live_price is not None:
         td_result = td_live_price.get_price(ticker)
         if td_result.get("is_live") and td_result.get("price"):
@@ -1242,12 +1324,15 @@ with tab1:
                     c4.metric("حجم تداول اليوم (فوليوم)", f"{vol:,.0f}")
 
                     source_labels = {
+                        "manual": "✍️ سعر يدوي (إنت أدخلته)",
                         "twelvedata": "🟢 Twelve Data (لحظي)",
                         "tradingview": "🟢 TradingView (لحظي، مصدر غير رسمي)",
                         "yahoo_fast_info": "🟡 Yahoo (شبه لحظي)",
                         "historical_close": "⚪ آخر إغلاق يومي (مش لحظي)",
                     }
                     st.caption(f"مصدر السعر: {source_labels.get(price_info['source'], price_info['source'])}")
+                    if price_info.get("updated_at"):
+                        st.caption(f"آخر تحديث يدوي: {price_info['updated_at']}")
 
                     # --- التحليل المالي الأساسي ---
                     fundamentals = fetch_fundamentals(ticker_input)
