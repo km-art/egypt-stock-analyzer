@@ -61,22 +61,18 @@ ALL_EGX_STOCKS = [
 ]
 
 # ==========================================
-# 3. دوال التحليل (مع إضافة التخزين المؤقت Cache)
+# 3. دوال التحليل المالي والفني
 # ==========================================
-
-# دالة جلب البيانات المالية (P/E, ROE) مع التخزين المؤقت
-@st.cache_data(ttl=300)  # ttl=300 يعني تخزين النتيجة لمدة 5 دقائق
+@st.cache_data(ttl=300)
 def get_fundamentals(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
         info = stock.info
-        pe = info.get("trailingPE")
-        roe = info.get("returnOnEquity")
-        return {"pe": pe, "roe": roe}
+        return {"pe": info.get("trailingPE"), "roe": info.get("returnOnEquity")}
     except:
         return {"pe": None, "roe": None}
 
-@st.cache_data(ttl=300)  # تخزين التحليل الفني أيضاً لمدة 5 دقائق
+@st.cache_data(ttl=300)
 def get_stock_analysis(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
@@ -84,10 +80,8 @@ def get_stock_analysis(ticker_symbol):
         if hist.empty or len(hist) < 25:
             return None
         
-        # جلب البيانات المالية
         fund = get_fundamentals(ticker_symbol)
         
-        # حساب المؤشرات الفنية
         delta = hist['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -113,7 +107,7 @@ def get_stock_analysis(ticker_symbol):
         prev_ema9 = ema9.iloc[-3]
         prev_ema21 = ema21.iloc[-3]
         
-        # حساب النقاط الفنية
+        # النقاط الفنية
         momentum_score = 0
         if ema9_val > ema21_val: momentum_score += 40
         if 50 <= mfi_val <= 70: momentum_score += 30
@@ -122,92 +116,94 @@ def get_stock_analysis(ticker_symbol):
         elif rsi_val > 75: momentum_score -= 20
         if vol_today > vol_ma10: momentum_score += 10
         
-        # تحديد الفئات
         priority = 0
         category = "🟡 مراقبة"
         rec_type = "hold"
         
         is_new_cross = (prev_ema9 <= prev_ema21) and (ema9_val > ema21_val)
         
+        # تصنيف السهم وتحديد الأهداف (Targets)
+        target = round(price * 1.03, 2)
+        stop_loss = round(price * 0.97, 2)
+        
         if is_new_cross and rsi_val < 52:
             category = "🚀 تأسيس مركز"
             rec_type = "buy"
             priority = 100
+            target = round(price * 1.08, 2)
+            stop_loss = round(price * 0.95, 2)
         elif rsi_val < 35 and mfi_val < 35:
             category = "🛒 قاع تجميع"
             rec_type = "buy"
             priority = 95
+            target = round(price * 1.08, 2)
+            stop_loss = round(price * 0.93, 2)
         elif ema9_val > ema21_val and vol_today > (vol_ma10 * 1.15) and 50 <= rsi_val <= 78:
             category = "⚡ مضاربة لحظية"
             rec_type = "buy"
             priority = 85
+            target = round(price * 1.04, 2)
+            stop_loss = round(price * 0.96, 2)
         elif ema9_val > ema21_val:
             category = "📈 استثمار مستقر"
             rec_type = "buy"
             priority = 70
+            target = round(price * 1.06, 2)
+            stop_loss = round(price * 0.96, 2)
         elif rsi_val > 75:
             category = "🔴 جني أرباح/بيع"
             rec_type = "sell"
             priority = 90
+            target = round(price * 1.00, 2)
+            stop_loss = round(price * 1.00, 2)
             
         return {
             "ticker": ticker_symbol.replace(".CA", ""),
             "price": price,
             "rsi": rsi_val,
             "mfi": mfi_val,
-            "vol_today": vol_today,
-            "vol_ma10": vol_ma10,
             "momentum_score": momentum_score,
             "category": category,
             "rec_type": rec_type,
             "priority": priority,
-            "pe": fund["pe"],      # إضافة مكرر الربحية
-            "roe": fund["roe"]     # إضافة العائد على حقوق الملكية
+            "target": target,
+            "stop_loss": stop_loss,
+            "pe": fund["pe"],
+            "roe": fund["roe"]
         }
     except:
         return None
 
 # ==========================================
-# 4. الواجهة الرئيسية والعرض
+# 4. مسح السوق
 # ==========================================
-st.title("🦅 قناص البورصة المصرية - التحليل الشامل")
+st.title("🦅 قناص البورصة المصرية - الهدف ووقف الخسارة")
 st.caption(f"آخر تحديث: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 st.write("---")
 
-st.info("⏳ جاري مسح السوق وتحميل البيانات المالية... (قد يستغرق 30 ثانية في أول زيارة فقط بفضل التخزين المؤقت)")
-
+st.info("⏳ جاري مسح 220 سهماً لتحديد الأهداف...")
 progress_bar = st.progress(0)
-status_text = st.empty()
-
 buy_signals = []
 sell_signals = []
 all_signals = []
 
 for index, ticker in enumerate(ALL_EGX_STOCKS):
-    progress = (index + 1) / len(ALL_EGX_STOCKS)
-    progress_bar.progress(progress)
-    status_text.text(f"جاري تحليل {ticker.replace('.CA', '')} ... ({index + 1}/{len(ALL_EGX_STOCKS)})")
-    
+    progress_bar.progress((index + 1) / len(ALL_EGX_STOCKS))
     data = get_stock_analysis(ticker)
     if data:
         all_signals.append(data)
-        if data['rec_type'] == "buy":
-            buy_signals.append(data)
-        elif data['rec_type'] == "sell":
-            sell_signals.append(data)
+        if data['rec_type'] == "buy": buy_signals.append(data)
+        elif data['rec_type'] == "sell": sell_signals.append(data)
 
-status_text.text("✅ تم الانتهاء من المسح!")
 progress_bar.empty()
 
-st.write("---")
-
 # ==========================================
-# 5. الكروت الملونة
+# 5. عرض الكروت الملونة (مع الهدف ووقف الخسارة)
 # ==========================================
-tab1, tab2 = st.tabs(["🟢 صفقات الشراء (مرتبة بالأولوية)", "🔴 صفقات البيع (مرتبة بالأولوية)"])
+tab1, tab2 = st.tabs(["🟢 صفقات الشراء (الأهداف)", "🔴 صفقات البيع"])
 
 with tab1:
-    st.subheader(f"🟢 تم العثور على {len(buy_signals)} سهم مناسب للشراء")
+    st.subheader(f"🟢 {len(buy_signals)} فرصة شراء متاحة")
     if buy_signals:
         sorted_buy = sorted(buy_signals, key=lambda x: x['priority'], reverse=True)
         for i in range(0, len(sorted_buy), 5):
@@ -218,16 +214,18 @@ with tab1:
                     st.markdown(f"""
                     <div class='box-buy'>
                         <h3 style='margin:0;'>{data['ticker']}</h3>
-                        <small>{data['category']} (أولوية: {data['priority']})</small>
+                        <small>{data['category']}</small>
                         <div class='stock-price'>{data['price']} ج.م</div>
+                        <div>🎯 الهدف: {data['target']} ج.م</div>
+                        <div style='background: rgba(0,0,0,0.1); padding: 5px; border-radius: 5px; margin-top: 10px;'>
+                            ⛔ وقف خسارة: {data['stop_loss']} ج.م
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
-                    st.caption(f"RSI: {data['rsi']} | MFI: {data['mfi']}")
-    else:
-        st.info("🚫 لا توجد أي أسهم مستوفية لشروط الشراء الآن.")
+    else: st.info("لا توجد فرص شراء حالياً.")
 
 with tab2:
-    st.subheader(f"🔴 تم العثور على {len(sell_signals)} سهم مناسب للبيع")
+    st.subheader(f"🔴 {len(sell_signals)} فرصة بيع (جني أرباح)")
     if sell_signals:
         sorted_sell = sorted(sell_signals, key=lambda x: x['priority'], reverse=True)
         for i in range(0, len(sorted_sell), 5):
@@ -238,75 +236,39 @@ with tab2:
                     st.markdown(f"""
                     <div class='box-sell'>
                         <h3 style='margin:0;'>{data['ticker']}</h3>
-                        <small>{data['category']} (أولوية: {data['priority']})</small>
+                        <small>{data['category']}</small>
                         <div class='stock-price'>{data['price']} ج.م</div>
                     </div>
                     """, unsafe_allow_html=True)
-                    st.caption(f"RSI: {data['rsi']} | MFI: {data['mfi']}")
-    else:
-        st.info("🚫 لا توجد أي أسهم مستوفية لشروط البيع الآن.")
+    else: st.info("لا توجد فرص بيع حالياً.")
 
 st.write("---")
 
 # ==========================================
-# 6. الأقسام الخمسة المتقدمة (مع إضافة التحليل المالي)
+# 6. الأقسام الخمسة (جداول البيانات مع P/E و ROE)
 # ==========================================
-st.title("📊 التحليل المتقدم: الأقسام الخمسة + المالي")
-
+st.title("📊 التحليل المتقدم: الجداول التفصيلية")
 if all_signals:
     df_all = pd.DataFrame(all_signals)
-    
-    # تعريف الأعمدة المطلوبة للعرض
     display_cols = ["ticker", "price", "rsi", "mfi", "momentum_score", "category", "pe", "roe"]
     
-    # 1. تأسيس مركز
-    st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم'")
-    df_cross = df_all[(df_all['priority'] == 100) & (df_all['rec_type'] == 'buy')]
-    if not df_cross.empty:
-        st.dataframe(df_cross[display_cols].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True)
-    else: st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم.")
+    st.markdown("### 🚀 أولاً: إشارة تأسيس مركز")
+    df_cross = df_all[df_all['priority'] == 100]
+    st.dataframe(df_cross[display_cols].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True) if not df_cross.empty else st.info("لا توجد نتائج.")
     
-    st.write("---")
-    
-    # 2. قاع تجميع
-    st.markdown("### 📥 ثانياً: رادار تصيد القيعان (أسهم رخيصة جداً)")
+    st.markdown("### 📥 ثانياً: رادار تصيد القيعان")
     df_bottom = df_all[df_all['priority'] == 95]
-    if not df_bottom.empty:
-        st.dataframe(df_bottom[display_cols].sort_values(by="rsi", ascending=True), use_container_width=True, hide_index=True)
-    else: st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد.")
+    st.dataframe(df_bottom[display_cols].sort_values(by="rsi", ascending=True), use_container_width=True, hide_index=True) if not df_bottom.empty else st.info("لا توجد نتائج.")
     
-    st.write("---")
-    
-    # 3. مضاربة
-    st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية")
+    st.markdown("### ⚡ ثالثاً: المضاربة اللحظية")
     df_short = df_all[df_all['priority'] == 85]
-    if not df_short.empty:
-        st.dataframe(df_short[display_cols].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True)
-    else: st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية حالياً.")
+    st.dataframe(df_short[display_cols].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True) if not df_short.empty else st.info("لا توجد نتائج.")
     
-    st.write("---")
-    
-    # 4. استثمار
-    st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر")
+    st.markdown("### 📈 رابعاً: الاستثمار المستقر")
     df_long = df_all[df_all['priority'] == 70]
-    if not df_long.empty:
-        st.dataframe(df_long[display_cols].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True)
-    else: st.info("لا توجد أسهم مستوفية لشروط الاستثمار المستقر حالياً.")
+    st.dataframe(df_long[display_cols].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True) if not df_long.empty else st.info("لا توجد نتائج.")
     
-    st.write("---")
-    
-    # 5. التوصية النهائية
-    st.markdown("### 🎯 خامساً: التوصية النهائية (كل الأسهم مرتبة حسب النقاط الفنية)")
-    st.caption("مرتبة من الأعلى نقاطاً للأدنى - مع بيانات P/E و ROE المالية")
+    st.markdown("### 🎯 خامساً: التوصية الشاملة")
     st.dataframe(df_all[display_cols + ["priority"]].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True)
-    
-    st.write("---")
-    vc1, vc2, vc3, vc4, vc5 = st.columns(5)
-    vc1.metric("🚀 تأسيس مراكز", len(df_cross))
-    vc2.metric("🛒 قيعان تجميع", len(df_bottom))
-    vc3.metric("⚡ مضاربة", len(df_short))
-    vc4.metric("📈 استثمار", len(df_long))
-    vc5.metric("🔴 بيع/جني أرباح", len(sell_signals))
 
-st.write("---")
-st.caption("⚠️ تنبيه: هذه الأداة للتحليل الفني والمعرفي فقط. ليست توصية استثمارية ملزمة.")
+st.caption("⚠️ هذه أداة مساعدة وليست توصية استثمارية ملزمة.")
