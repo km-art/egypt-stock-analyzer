@@ -376,8 +376,13 @@ with tab0:
 
 with tab1:
     st.subheader("أفضل الأسهم للمدى القصير")
+    st.caption(
+        "💡 `target_sell_price` = سعر بيع مستهدف تقني (النطاق العلوي لبولينجر "
+        "باندز، مقاومة فنية طبيعية). لو فاضي (None)، السهم بالفعل فوق النطاق "
+        "العلوي (متشبع شرائياً) ومفيش هامش صعود فني واضح متبقي دلوقتي."
+    )
     short_cols = ["ticker", "price", "price_is_live", "price_source", "rsi", "macd_hist", "above_sma20",
-                  "short_term_score", "التوصية"]
+                  "target_sell_price", "target_sell_upside_%", "short_term_score", "التوصية"]
     short_cols = [c for c in short_cols if c in filtered.columns]  # حماية لو عمود جديد لسه مش موجود في النسخة الشغالة
     st.dataframe(
         filtered.sort_values("short_term_score", ascending=False)[short_cols],
