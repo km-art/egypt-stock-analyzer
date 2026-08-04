@@ -1323,6 +1323,21 @@ with tab1:
                     c3.metric("مؤشر السيولة MFI", f"{mfi:.1f}")
                     c4.metric("حجم تداول اليوم (فوليوم)", f"{vol:,.0f}")
 
+                    # سعر بيع مستهدف (تقني) = النطاق العلوي لبولينجر باندز - لو
+                    # السعر فوقه فعلاً، السهم متشبع شرائياً ومفيش هامش صعود واضح
+                    if upper > price:
+                        target_sell_price = round(upper, 2)
+                        target_sell_upside = round((target_sell_price / price - 1) * 100, 1)
+                        st.info(
+                            f"🎯 سعر بيع مستهدف (تقني): **{target_sell_price} {price_currency}** "
+                            f"(+{target_sell_upside}% عن السعر الحالي) - النطاق العلوي لبولينجر باندز."
+                        )
+                    else:
+                        st.warning(
+                            "🎯 السعر الحالي **فوق** النطاق العلوي لبولينجر باندز فعلاً - "
+                            "السهم متشبع شرائياً ومفيش هامش صعود فني واضح متبقي دلوقتي."
+                        )
+
                     source_labels = {
                         "manual": "✍️ سعر يدوي (إنت أدخلته)",
                         "twelvedata": "🟢 Twelve Data (لحظي)",
@@ -1522,6 +1537,16 @@ with tab2:
                         status = "🟡 HOLD (مراقبة)"
                     
                     currency = get_currency(ticker)
+
+                    # سعر بيع مستهدف (تقني) = النطاق العلوي لبولينجر باندز - None
+                    # لو السعر فوقه فعلاً (متشبع شرائياً، مفيش هامش صعود واضح)
+                    if u > p:
+                        target_sell_price = round(u, 2)
+                        target_sell_upside = round((target_sell_price / p - 1) * 100, 1)
+                    else:
+                        target_sell_price = None
+                        target_sell_upside = None
+
                     data_entry = {
                         "النقاط الفنية والسيولة (من 100)": round(momentum_score, 1),
                         "اسم الشركة": name,
@@ -1529,6 +1554,8 @@ with tab2:
                         "القطاع": sector,
                         "العملة": currency,
                         "السعر الحالي": round(p, 2),
+                        "سعر بيع مستهدف (تقني)": target_sell_price,
+                        "فرق السعر المستهدف %": target_sell_upside,
                         "مؤشر الزخم RSI": round(r, 1),
                         "مؤشر السيولة MFI": round(m, 1),
                         "فوليوم اليوم": f"{vol_today:,.0f}",
