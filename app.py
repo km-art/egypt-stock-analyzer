@@ -7,9 +7,8 @@ from datetime import datetime
 # ==========================================
 # 1. إعدادات الصفحة والتنسيق
 # ==========================================
-st.set_page_config(page_title="بورصي - التحليل اليومي", layout="wide", page_icon="📈")
+st.set_page_config(page_title="بورصي - صفقات اليوم", layout="wide", page_icon="📈")
 
-# تنسيق CSS (لون الخلفية والأزرار)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
@@ -19,15 +18,14 @@ st.markdown("""
         direction: rtl;
     }
     .card-number { font-size: 32px; font-weight: bold; margin: 10px 0; }
-    .box-buy { background-color: #4CAF50; color: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
-    .box-sell { background-color: #f44336; color: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
-    .box-hold { background-color: #FFC107; color: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
+    .box-buy { background-color: #2ecc71; color: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
+    .box-sell { background-color: #e74c3c; color: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
     .stock-price { font-size: 24px; font-weight: bold; margin: 10px 0; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. قائمة ضخمة بكل أسهم البورصة المصرية (EGX)
+# 2. قائمة بكل أسهم البورصة المصرية (EGX)
 # ==========================================
 ALL_EGX_STOCKS = [
     "ACAP.CA", "AJWA.CA", "ASCM.CA", "ACTF.CA", "AFDI.CA", "ATLC.CA", "KRDI.CA", "AXPH.CA",
@@ -62,7 +60,7 @@ ALL_EGX_STOCKS = [
 ]
 
 # ==========================================
-# 3. دوال التحليل الفني والمالي
+# 3. دوال التحليل الفني
 # ==========================================
 def calculate_indicators(df):
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
@@ -94,85 +92,121 @@ def get_stock_analysis(ticker_symbol):
         ema21 = round(last['EMA21'], 2)
         volume = int(last['Volume'])
         
-        recommendation = "🟡 انتظار"
-        rec_color = "box-hold"
+        # تحديد التوصية
+        recommendation = "انتظار"
+        rec_type = "hold"
         target_price = round(price * 1.03, 2)
         stop_loss = round(price * 0.97, 2)
         
         if rsi < 35:
-            recommendation = "🛒 تجميع (منطقة رخيصة)"
-            rec_color = "box-buy"
+            recommendation = "تجميع (منطقة رخيصة)"
+            rec_type = "buy"
             target_price = round(price * 1.05, 2)
             stop_loss = round(price * 0.95, 2)
         elif rsi > 75 or price >= last['Upper_Band']:
-            recommendation = "🔴 بيع/جني أرباح"
-            rec_color = "box-sell"
+            recommendation = "جني أرباح/بيع"
+            rec_type = "sell"
             target_price = price
             stop_loss = price
         elif ema9 > ema21 and 40 < rsi < 65:
-            recommendation = "🟢 شراء (اتجاه صاعد)"
-            rec_color = "box-buy"
+            recommendation = "شراء (اتجاه صاعد)"
+            rec_type = "buy"
             target_price = round(price * 1.05, 2)
             stop_loss = round(price * 0.98, 2)
             
         return {
             "ticker": ticker_symbol.replace(".CA", ""),
             "price": price, "rsi": rsi,
-            "recommendation": recommendation, "rec_color": rec_color,
+            "recommendation": recommendation, "type": rec_type,
             "target": target_price, "stop": stop_loss, "volume": volume
         }
     except:
         return None
 
 # ==========================================
-# 4. عرض الواجهة (قائمة ديناميكية)
+# 4. محرك المسح
 # ==========================================
-st.title("📊 بورصي - التحليل اليومي لجميع الأسهم")
+st.title("📊 بورصي - صفقات اليوم")
 st.caption(f"آخر تحديث: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 st.write("---")
 
-# شريط البحث (للبحث عن سهم معين)
-search_query = st.text_input("🔍 ابحث عن سهم (مثل: COMI, TMGH, SWDY):", "").strip().upper()
+st.info("⏳ جاري مسح 220 سهماً في البورصة المصرية لتحديد صفقات الشراء والبيع. قد يستغرق ذلك 30 ثانية.")
 
-# تحديد القائمة التي سنعرضها
-if search_query:
-    # إذا كتب المستخدم حرفاً، نبحث عن السهم
-    display_stocks = [s for s in ALL_EGX_STOCKS if search_query in s]
-    if not display_stocks:
-        st.warning(f"لم يتم العثور على سهم باسم '{search_query}'")
-        display_stocks = ALL_EGX_STOCKS[:5] # لو مفيش نتيجة، نعرض عشوائياً
-else:
-    # لو مفيش بحث، نعرض كل الأسهم (ولكن Streamlit قد يتأخر لو أكثر من 200 سهم)
-    # هنا سنعرضهم بالكامل ولكن بشكل تدريجي
-    display_stocks = ALL_EGX_STOCKS
+# تشغيل شريط التقدم
+progress_bar = st.progress(0)
+status_text = st.empty()
 
-st.subheader("🏆 نتائج المسح")
-st.info("🔄 جاري تحميل بيانات الأسهم (كل صف يعرض 5 أسهم). قد يستغرق التحميل 30 ثانية لأول مرة.")
+buy_signals = []
+sell_signals = []
 
-# نظام التقسيم: عرض 5 أسهم في كل صف تلقائياً
-cols_per_row = 5
-for i in range(0, len(display_stocks), cols_per_row):
-    batch = display_stocks[i:i + cols_per_row]
-    cols = st.columns(cols_per_row)
+for index, ticker in enumerate(ALL_EGX_STOCKS):
+    # تحديث شريط التقدم
+    progress = (index + 1) / len(ALL_EGX_STOCKS)
+    progress_bar.progress(progress)
+    status_text.text(f"جاري تحليل {ticker.replace('.CA', '')} ... ({index + 1}/{len(ALL_EGX_STOCKS)})")
     
-    for col, ticker in zip(cols, batch):
-        with col:
-            data = get_stock_analysis(ticker)
-            if data:
-                st.markdown(f"""
-                <div class='{data['rec_color']}'>
-                    <h3 style='margin:0;'>{data['ticker']}</h3>
-                    <small>{data['recommendation']}</small>
-                    <div class='stock-price'>{data['price']} ج.م</div>
-                    <div>🎯 الهدف: {data['target']} ج.م</div>
-                    <div style='background: rgba(0,0,0,0.1); padding: 5px; border-radius: 5px; margin-top: 10px;'>
-                        ⛔ وقف خسارة: {data['stop']} ج.م
+    data = get_stock_analysis(ticker)
+    if data:
+        if data['type'] == "buy":
+            buy_signals.append(data)
+        elif data['type'] == "sell":
+            sell_signals.append(data)
+
+status_text.text("✅ تم الانتهاء من المسح!")
+progress_bar.empty()
+
+st.write("---")
+
+# ==========================================
+# 5. عرض النتائج في تبويبات (شراء / بيع)
+# ==========================================
+tab1, tab2 = st.tabs(["🟢 صفقات الشراء (اشترِ)", "🔴 صفقات البيع (بعْ)"])
+
+with tab1:
+    st.subheader(f"🟢 تم العثور على {len(buy_signals)} سهم مناسب للشراء")
+    if buy_signals:
+        for i in range(0, len(buy_signals), 5):
+            batch = buy_signals[i:i+5]
+            cols = st.columns(5)
+            for col, data in zip(cols, batch):
+                with col:
+                    st.markdown(f"""
+                    <div class='box-buy'>
+                        <h3 style='margin:0;'>{data['ticker']}</h3>
+                        <small>{data['recommendation']}</small>
+                        <div class='stock-price'>{data['price']} ج.م</div>
+                        <div>🎯 الهدف: {data['target']} ج.م</div>
+                        <div style='background: rgba(0,0,0,0.1); padding: 5px; border-radius: 5px; margin-top: 10px;'>
+                            ⛔ وقف خسارة: {data['stop']} ج.م
+                        </div>
                     </div>
-                </div>
-                """, unsafe_allow_html=True)
-                st.caption(f"RSI: {data['rsi']} | فوليوم: {data['volume']:,}")
-            else:
-                st.error(f"تعذر جلب بيانات {ticker.replace('.CA','')}")
+                    """, unsafe_allow_html=True)
+                    st.caption(f"RSI: {data['rsi']} | فوليوم: {data['volume']:,}")
+    else:
+        st.info("🚫 لا توجد أي أسهم مستوفية لشروط الشراء الآن.")
+
+with tab2:
+    st.subheader(f"🔴 تم العثور على {len(sell_signals)} سهم مناسب للبيع")
+    if sell_signals:
+        for i in range(0, len(sell_signals), 5):
+            batch = sell_signals[i:i+5]
+            cols = st.columns(5)
+            for col, data in zip(cols, batch):
+                with col:
+                    st.markdown(f"""
+                    <div class='box-sell'>
+                        <h3 style='margin:0;'>{data['ticker']}</h3>
+                        <small>{data['recommendation']}</small>
+                        <div class='stock-price'>{data['price']} ج.م</div>
+                        <div>🎯 الهدف: {data['target']} ج.م</div>
+                        <div style='background: rgba(0,0,0,0.1); padding: 5px; border-radius: 5px; margin-top: 10px;'>
+                            ⛔ وقف خسارة: {data['stop']} ج.م
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.caption(f"RSI: {data['rsi']} | فوليوم: {data['volume']:,}")
+    else:
+        st.info("🚫 لا توجد أي أسهم مستوفية لشروط البيع الآن.")
 
 st.write("---")
 st.info("💡 التحليل يعتمد على مؤشرات القوة النسبية (RSI) والمتوسطات المتحركة (EMA). هذه أداة مساعدة وليست توصية استثمارية ملزمة.")
