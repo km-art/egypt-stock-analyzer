@@ -7,8 +7,9 @@ from datetime import datetime
 # ==========================================
 # 1. إعدادات الصفحة والتنسيق
 # ==========================================
-st.set_page_config(page_title="بورصي - التحليل المتكامل", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="بورصي - صفقات اليوم والتحليل المتقدم", layout="wide", page_icon="🦅")
 
+# تنسيق CSS (نفس التصميم اللي عجبك)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
@@ -22,8 +23,6 @@ st.markdown("""
     .box-sell { background-color: #e74c3c; color: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
     .box-hold { background-color: #FFC107; color: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
     .stock-price { font-size: 24px; font-weight: bold; margin: 10px 0; }
-    /* تنسيق الجداول */
-    .stDataFrame { font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -63,7 +62,7 @@ ALL_EGX_STOCKS = [
 ]
 
 # ==========================================
-# 3. دوال التحليل (مأخوذة من ملفك المتقدم)
+# 3. دوال التحليل المتقدمة
 # ==========================================
 def calculate_indicators(df):
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
@@ -91,7 +90,7 @@ def calculate_indicators(df):
     df['Vol_MA10'] = df['Volume'].rolling(window=10).mean()
     return df
 
-def get_analysis(ticker_symbol):
+def get_stock_analysis(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
         hist = stock.history(period="100d")
@@ -124,128 +123,217 @@ def get_analysis(ticker_symbol):
         elif rsi > 75: momentum_score -= 20
         if vol_today > vol_ma10: momentum_score += 10
         
-        # تحديد الفئات الخمسة
-        category = None
+        # تحديد الفئات والترتيب حسب الأولوية (Priority)
         priority = 0
+        category = "🟡 مراقبة"
+        rec_type = "hold"
+        target_price = round(price * 1.03, 2)
+        stop_loss = round(price * 0.97, 2)
         
-        # 1. تأسيس مركز
+        # 1. تأسيس مركز (أعلى أولوية)
         if is_new_cross and rsi < 52:
             category = "🚀 تأسيس مركز"
+            rec_type = "buy"
             priority = 100
+            target_price = round(price * 1.05, 2)
+            stop_loss = round(price * 0.95, 2)
+            
         # 2. قاع تجميع
         elif rsi < 35 and mfi < 35:
             category = "🛒 قاع تجميع"
+            rec_type = "buy"
             priority = 95
+            target_price = round(price * 1.08, 2)
+            stop_loss = round(price * 0.93, 2)
+            
         # 3. مضاربة
         elif ema9 > ema21 and vol_today > (vol_ma10 * 1.15) and 50 <= rsi <= 78:
             category = "⚡ مضاربة لحظية"
+            rec_type = "buy"
             priority = 85
+            target_price = round(price * 1.04, 2)
+            stop_loss = round(price * 0.97, 2)
+            
         # 4. استثمار طويل
         elif ema9 > ema21:
             category = "📈 استثمار مستقر"
+            rec_type = "buy"
             priority = 70
-        else:
-            category = "🟡 مراقبة"
-            priority = 0
+            target_price = round(price * 1.06, 2)
+            stop_loss = round(price * 0.96, 2)
+
+        # 5. حالات البيع (إذا كان السهم في قمة)
+        elif rsi > 75 or price >= last['Upper_Band']:
+            category = "🔴 جني أرباح/بيع"
+            rec_type = "sell"
+            priority = 90
+            target_price = price
+            stop_loss = price
             
         return {
-            "اسم الشركة": ticker_symbol.replace(".CA", ""),
-            "الرمز البرمجي": ticker_symbol,
-            "السعر الحالي": price,
-            "مؤشر الزخم RSI": rsi,
-            "مؤشر السيولة MFI": mfi,
-            "فوليوم اليوم": f"{vol_today:,}",
-            "متوسط فوليوم 10أيام": f"{vol_ma10:,}",
-            "متوسط قيمة التداول (تقريبي)": f"{avg_trade_value:,.0f}",
-            "النقاط الفنية والسيولة (من 100)": momentum_score,
-            "التقييم الفني": category,
-            "الفئة": category,
-            "القطاع": "غير مصنف", # يمكن إضافته لاحقاً
-            "العملة": "EGP",
-            "الأولوية": priority
+            "ticker": ticker_symbol.replace(".CA", ""),
+            "price": price,
+            "rsi": rsi,
+            "mfi": mfi,
+            "vol_today": vol_today,
+            "vol_ma10": vol_ma10,
+            "avg_trade_val": avg_trade_value,
+            "momentum_score": momentum_score,
+            "category": category,
+            "rec_type": rec_type,
+            "target": target_price,
+            "stop": stop_loss,
+            "priority": priority
         }
     except:
         return None
 
 # ==========================================
-# 4. محرك المسح والعرض
+# 4. الواجهة الرئيسية (التبويبات والكروت)
 # ==========================================
-st.title("🦅 قناص البورصة المصرية - النسخة المتكاملة")
+st.title("🦅 قناص البورصة المصرية - التحليل الشامل")
 st.caption(f"آخر تحديث: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 st.write("---")
 
-# زر التشغيل
-if st.button("🚀 بدء مسح السوق بالكامل (تحليل 220 سهم)"):
-    with st.spinner('جاري مسح السوق وتصنيف الأسهم... قد يستغرق هذا 40 ثانية'):
-        progress_bar = st.progress(0)
-        
-        results = []
-        for idx, ticker in enumerate(ALL_EGX_STOCKS):
-            progress_bar.progress((idx + 1) / len(ALL_EGX_STOCKS))
-            data = get_analysis(ticker)
-            if data:
-                results.append(data)
-        
-        progress_bar.empty()
-        
-        if results:
-            df = pd.DataFrame(results)
-            
-            # تصنيف النتائج
-            df_cross = df[df["التقييم الفني"] == "🚀 تأسيس مركز"].sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
-            df_bottom = df[df["التقييم الفني"] == "🛒 قاع تجميع"].sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
-            df_short = df[df["التقييم الفني"] == "⚡ مضاربة لحظية"].sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
-            df_long = df[df["التقييم الفني"] == "📈 استثمار مستقر"].sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)
-            
-            # عرض الأقسام الخمسة (كما طلبت بالضبط)
-            st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
-            if not df_cross.empty:
-                st.dataframe(df_cross, use_container_width=True, hide_index=True)
-            else: st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم.")
-            
-            st.write("---")
-            
-            st.markdown("### 📥 ثانياً: رادار تصيد القيعان (أسهم رخيصة جداً في مناطق تجميع الحيتان 🐋)")
-            if not df_bottom.empty:
-                st.dataframe(df_bottom, use_container_width=True, hide_index=True)
-            else: st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد.")
-            
-            st.write("---")
-            
-            st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية (سيولة ضخمة وعزم سريع محمي من التضخم)")
-            if not df_short.empty:
-                st.dataframe(df_short, use_container_width=True, hide_index=True)
-            else: st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة حالياً.")
-            
-            st.write("---")
-            
-            st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر (طويل الأجل وآمن)")
-            if not df_long.empty:
-                st.dataframe(df_long, use_container_width=True, hide_index=True)
-            else: st.info("لا توجد أسهم مستوفية لشروط الاستثمار المستقر حالياً.")
-            
-            st.write("---")
-            
-            # القسم الخامس: التوصية النهائية لجميع الأسهم
-            st.markdown("### 🎯 خامساً: التوصية النهائية (فني + مالي مع بعض)")
-            st.caption("مرتبة حسب النقاط الفنية + السيولة (من الأعلى للأدنى) لجميع الأسهم النشطة")
-            if not df.empty:
-                # حذف الأعمدة غير الضرورية للعرض النهائي
-                display_cols = ["اسم الشركة", "الرمز البرمجي", "السعر الحالي", "التقييم الفني", "النقاط الفنية والسيولة (من 100)", "فوليوم اليوم"]
-                st.dataframe(df.sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False)[display_cols], use_container_width=True, hide_index=True)
-                
-                # إحصائيات سريعة
-                vc1, vc2, vc3, vc4 = st.columns(4)
-                vc1.metric("🚀 تأسيس مراكز", len(df_cross))
-                vc2.metric("🛒 قيعان تجميع", len(df_bottom))
-                vc3.metric("⚡ مضاربة", len(df_short))
-                vc4.metric("📈 استثمار", len(df_long))
-            else:
-                st.warning("لم يتم العثور على أي بيانات.")
-        else:
-            st.error("حدث خطأ أثناء جلب البيانات.")
-else:
-    st.info("👆 اضغط على زر 'بدء مسح السوق بالكامل' لبدء التحليل المتقدم.")
+st.info("⏳ جاري مسح 220 سهماً لتصنيفهم حسب الأولوية (قد يستغرق 30 ثانية).")
+
+progress_bar = st.progress(0)
+status_text = st.empty()
+
+buy_signals = []
+sell_signals = []
+all_signals = []
+
+for index, ticker in enumerate(ALL_EGX_STOCKS):
+    progress = (index + 1) / len(ALL_EGX_STOCKS)
+    progress_bar.progress(progress)
+    status_text.text(f"جاري تحليل {ticker.replace('.CA', '')} ... ({index + 1}/{len(ALL_EGX_STOCKS)})")
+    
+    data = get_stock_analysis(ticker)
+    if data:
+        all_signals.append(data)
+        if data['rec_type'] == "buy":
+            buy_signals.append(data)
+        elif data['rec_type'] == "sell":
+            sell_signals.append(data)
+
+status_text.text("✅ تم الانتهاء من المسح!")
+progress_bar.empty()
 
 st.write("---")
-st.caption("⚠️ تنبيه: هذه الأداة للتحليل الفني والمعرفي فقط. ليست توصية استثمارية ملزمة. يرجى مراجعة مستشار مالي قبل اتخاذ القرارات.")
+
+# ==========================================
+# 5. عرض النتائج: الكروت الملونة (الجزء الأول)
+# ==========================================
+tab1, tab2 = st.tabs(["🟢 صفقات الشراء (مرتبة بالأولوية)", "🔴 صفقات البيع (مرتبة بالأولوية)"])
+
+with tab1:
+    st.subheader(f"🟢 تم العثور على {len(buy_signals)} سهم مناسب للشراء")
+    if buy_signals:
+        sorted_buy = sorted(buy_signals, key=lambda x: x['priority'], reverse=True)
+        for i in range(0, len(sorted_buy), 5):
+            batch = sorted_buy[i:i+5]
+            cols = st.columns(5)
+            for col, data in zip(cols, batch):
+                with col:
+                    st.markdown(f"""
+                    <div class='box-buy'>
+                        <h3 style='margin:0;'>{data['ticker']}</h3>
+                        <small>{data['category']} (أولوية: {data['priority']})</small>
+                        <div class='stock-price'>{data['price']} ج.م</div>
+                        <div>🎯 الهدف: {data['target']} ج.م</div>
+                        <div style='background: rgba(0,0,0,0.1); padding: 5px; border-radius: 5px; margin-top: 10px;'>
+                            ⛔ وقف خسارة: {data['stop']} ج.م
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.caption(f"RSI: {data['rsi']} | MFI: {data['mfi']}")
+    else:
+        st.info("🚫 لا توجد أي أسهم مستوفية لشروط الشراء الآن.")
+
+with tab2:
+    st.subheader(f"🔴 تم العثور على {len(sell_signals)} سهم مناسب للبيع")
+    if sell_signals:
+        sorted_sell = sorted(sell_signals, key=lambda x: x['priority'], reverse=True)
+        for i in range(0, len(sorted_sell), 5):
+            batch = sorted_sell[i:i+5]
+            cols = st.columns(5)
+            for col, data in zip(cols, batch):
+                with col:
+                    st.markdown(f"""
+                    <div class='box-sell'>
+                        <h3 style='margin:0;'>{data['ticker']}</h3>
+                        <small>{data['category']} (أولوية: {data['priority']})</small>
+                        <div class='stock-price'>{data['price']} ج.م</div>
+                        <div>🎯 الهدف: {data['target']} ج.م</div>
+                        <div style='background: rgba(0,0,0,0.1); padding: 5px; border-radius: 5px; margin-top: 10px;'>
+                            ⛔ وقف خسارة: {data['stop']} ج.م
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.caption(f"RSI: {data['rsi']} | MFI: {data['mfi']}")
+    else:
+        st.info("🚫 لا توجد أي أسهم مستوفية لشروط البيع الآن.")
+
+st.write("---")
+
+# ==========================================
+# 6. عرض النتائج: الأقسام الخمسة (الجزء الثاني المتقدم)
+# ==========================================
+st.title("📊 التحليل المتقدم: الأقسام الخمسة")
+
+if all_signals:
+    df_all = pd.DataFrame(all_signals)
+    
+    # 1. تأسيس مركز
+    st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
+    df_cross = df_all[(df_all['priority'] == 100) & (df_all['rec_type'] == 'buy')]
+    if not df_cross.empty:
+        st.dataframe(df_cross[["ticker", "price", "rsi", "mfi", "momentum_score", "category"]].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True)
+    else: st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم.")
+    
+    st.write("---")
+    
+    # 2. قاع تجميع
+    st.markdown("### 📥 ثانياً: رادار تصيد القيعان (أسهم رخيصة جداً في مناطق تجميع الحيتان 🐋)")
+    df_bottom = df_all[df_all['priority'] == 95]
+    if not df_bottom.empty:
+        st.dataframe(df_bottom[["ticker", "price", "rsi", "mfi", "momentum_score", "category"]].sort_values(by="rsi", ascending=True), use_container_width=True, hide_index=True)
+    else: st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد.")
+    
+    st.write("---")
+    
+    # 3. مضاربة
+    st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية (سيولة ضخمة وعزم سريع محمي من التضخم)")
+    df_short = df_all[df_all['priority'] == 85]
+    if not df_short.empty:
+        st.dataframe(df_short[["ticker", "price", "rsi", "mfi", "momentum_score", "category"]].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True)
+    else: st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة حالياً.")
+    
+    st.write("---")
+    
+    # 4. استثمار
+    st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر (طويل الأجل وآمن)")
+    df_long = df_all[df_all['priority'] == 70]
+    if not df_long.empty:
+        st.dataframe(df_long[["ticker", "price", "rsi", "mfi", "momentum_score", "category"]].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True)
+    else: st.info("لا توجد أسهم مستوفية لشروط الاستثمار المستقر حالياً.")
+    
+    st.write("---")
+    
+    # 5. التوصية النهائية
+    st.markdown("### 🎯 خامساً: التوصية النهائية (كل الأسهم مرتبة حسب النقاط الفنية)")
+    st.caption("مرتبة من الأعلى نقاطاً للأدنى")
+    st.dataframe(df_all[["ticker", "price", "rsi", "mfi", "momentum_score", "category", "priority"]].sort_values(by="momentum_score", ascending=False), use_container_width=True, hide_index=True)
+    
+    # إحصائيات سريعة أسفل الجداول
+    st.write("---")
+    vc1, vc2, vc3, vc4, vc5 = st.columns(5)
+    vc1.metric("🚀 تأسيس مراكز", len(df_cross))
+    vc2.metric("🛒 قيعان تجميع", len(df_bottom))
+    vc3.metric("⚡ مضاربة", len(df_short))
+    vc4.metric("📈 استثمار", len(df_long))
+    vc5.metric("🔴 بيع/جني أرباح", len(sell_signals))
+
+st.write("---")
+st.caption("⚠️ تنبيه: هذه الأداة للتحليل الفني والمعرفي فقط. ليست توصية استثمارية ملزمة.")
