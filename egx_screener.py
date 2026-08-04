@@ -376,6 +376,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
     sma200 = close.rolling(200).mean() if len(close) >= 200 else pd.Series([np.nan] * len(close))
     rsi = compute_rsi(close)
     macd_line, signal_line, hist = compute_macd(close)
+    upper_bb, mid_bb, lower_bb = compute_bollinger(close)
 
     last_price = float(close.iloc[-1])  # افتراضياً: آخر إغلاق يومي متاح من السلسلة التاريخية
     price_is_live = False
@@ -424,6 +425,17 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
     prev_hist = float(hist.iloc[-2])
     avg_vol20 = float(volume.rolling(20).mean().iloc[-1])
     last_vol = float(volume.iloc[-1])
+
+    # سعر بيع مستهدف (تقني) = النطاق العلوي لبولينجر باندز - مقاومة فنية
+    # طبيعية بناءً على تذبذب السعر خلال آخر 20 يوم. لو السعر الحالي فوقه
+    # أصلاً، يبقى السهم متشبع شرائياً ومفيش "هامش صعود" تقني واضح متبقي.
+    last_upper_bb = float(upper_bb.iloc[-1]) if not pd.isna(upper_bb.iloc[-1]) else None
+    if last_upper_bb is not None and last_upper_bb > last_price:
+        target_sell_price = round(last_upper_bb, 2)
+        target_sell_upside_pct = round((target_sell_price / last_price - 1) * 100, 1)
+    else:
+        target_sell_price = None
+        target_sell_upside_pct = None
 
     # متوسط قيمة التداول اليومية (جنيه) = السعر × الكمية، متوسط على آخر LIQUIDITY_LOOKBACK_DAYS يوم
     trade_value = close * volume
@@ -493,6 +505,8 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
         "volatility_%": round(volatility, 1),
         "avg_trade_value": round(avg_trade_value, 0),
         "meets_liquidity_min": meets_liquidity_min,
+        "target_sell_price": target_sell_price,
+        "target_sell_upside_%": target_sell_upside_pct,
         "short_term_score": short_score,
         "long_term_technical_score": long_score,
     }
