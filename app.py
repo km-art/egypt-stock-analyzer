@@ -92,7 +92,8 @@ def get_stock_analysis(ticker_symbol):
         ema21 = round(last['EMA21'], 2)
         volume = int(last['Volume'])
         
-        # تحديد التوصية
+        # تحديد التوصية وحساب درجة القوة (Priority Score)
+        priority_score = 0
         recommendation = "انتظار"
         rec_type = "hold"
         target_price = round(price * 1.03, 2)
@@ -103,22 +104,27 @@ def get_stock_analysis(ticker_symbol):
             rec_type = "buy"
             target_price = round(price * 1.05, 2)
             stop_loss = round(price * 0.95, 2)
+            priority_score = 85 # درجة عالية جداً
         elif rsi > 75 or price >= last['Upper_Band']:
             recommendation = "جني أرباح/بيع"
             rec_type = "sell"
             target_price = price
             stop_loss = price
+            priority_score = 90 # درجة عالية جداً للبيع
         elif ema9 > ema21 and 40 < rsi < 65:
             recommendation = "شراء (اتجاه صاعد)"
             rec_type = "buy"
             target_price = round(price * 1.05, 2)
             stop_loss = round(price * 0.98, 2)
+            # حساب درجة القوة بناءً على انحراف RSI عن الـ 50 (كلما ابتعدنا نحو 65 زادت القوة)
+            priority_score = 60 + (rsi - 40) 
             
         return {
             "ticker": ticker_symbol.replace(".CA", ""),
             "price": price, "rsi": rsi,
             "recommendation": recommendation, "type": rec_type,
-            "target": target_price, "stop": stop_loss, "volume": volume
+            "target": target_price, "stop": stop_loss, 
+            "volume": volume, "score": int(priority_score)
         }
     except:
         return None
@@ -126,11 +132,11 @@ def get_stock_analysis(ticker_symbol):
 # ==========================================
 # 4. محرك المسح
 # ==========================================
-st.title("📊 بورصي - صفقات اليوم")
+st.title("📊 بورصي - صفقات اليوم (مرتبة حسب الأولوية)")
 st.caption(f"آخر تحديث: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 st.write("---")
 
-st.info("⏳ جاري مسح 220 سهماً في البورصة المصرية لتحديد صفقات الشراء والبيع. قد يستغرق ذلك 30 ثانية.")
+st.info("⏳ جاري مسح 220 سهماً في البورصة المصرية لتحديد صفقات الشراء والبيع.")
 
 # تشغيل شريط التقدم
 progress_bar = st.progress(0)
@@ -140,7 +146,6 @@ buy_signals = []
 sell_signals = []
 
 for index, ticker in enumerate(ALL_EGX_STOCKS):
-    # تحديث شريط التقدم
     progress = (index + 1) / len(ALL_EGX_STOCKS)
     progress_bar.progress(progress)
     status_text.text(f"جاري تحليل {ticker.replace('.CA', '')} ... ({index + 1}/{len(ALL_EGX_STOCKS)})")
@@ -158,22 +163,25 @@ progress_bar.empty()
 st.write("---")
 
 # ==========================================
-# 5. عرض النتائج في تبويبات (شراء / بيع)
+# 5. ترتيب النتائج وعرضها
 # ==========================================
-tab1, tab2 = st.tabs(["🟢 صفقات الشراء (اشترِ)", "🔴 صفقات البيع (بعْ)"])
+tab1, tab2 = st.tabs(["🟢 صفقات الشراء (مرتبة بالأولوية)", "🔴 صفقات البيع (مرتبة بالأولوية)"])
 
 with tab1:
     st.subheader(f"🟢 تم العثور على {len(buy_signals)} سهم مناسب للشراء")
     if buy_signals:
-        for i in range(0, len(buy_signals), 5):
-            batch = buy_signals[i:i+5]
+        # الترتيب التنازلي حسب الـ score (الأعلى أولاً)
+        sorted_buy = sorted(buy_signals, key=lambda x: x['score'], reverse=True)
+        
+        for i in range(0, len(sorted_buy), 5):
+            batch = sorted_buy[i:i+5]
             cols = st.columns(5)
             for col, data in zip(cols, batch):
                 with col:
                     st.markdown(f"""
                     <div class='box-buy'>
                         <h3 style='margin:0;'>{data['ticker']}</h3>
-                        <small>{data['recommendation']}</small>
+                        <small>{data['recommendation']} (الأولوية: {data['score']})</small>
                         <div class='stock-price'>{data['price']} ج.م</div>
                         <div>🎯 الهدف: {data['target']} ج.م</div>
                         <div style='background: rgba(0,0,0,0.1); padding: 5px; border-radius: 5px; margin-top: 10px;'>
@@ -188,15 +196,18 @@ with tab1:
 with tab2:
     st.subheader(f"🔴 تم العثور على {len(sell_signals)} سهم مناسب للبيع")
     if sell_signals:
-        for i in range(0, len(sell_signals), 5):
-            batch = sell_signals[i:i+5]
+        # الترتيب التنازلي حسب الـ score (الأعلى أولاً)
+        sorted_sell = sorted(sell_signals, key=lambda x: x['score'], reverse=True)
+        
+        for i in range(0, len(sorted_sell), 5):
+            batch = sorted_sell[i:i+5]
             cols = st.columns(5)
             for col, data in zip(cols, batch):
                 with col:
                     st.markdown(f"""
                     <div class='box-sell'>
                         <h3 style='margin:0;'>{data['ticker']}</h3>
-                        <small>{data['recommendation']}</small>
+                        <small>{data['recommendation']} (الأولوية: {data['score']})</small>
                         <div class='stock-price'>{data['price']} ج.م</div>
                         <div>🎯 الهدف: {data['target']} ج.م</div>
                         <div style='background: rgba(0,0,0,0.1); padding: 5px; border-radius: 5px; margin-top: 10px;'>
@@ -209,4 +220,4 @@ with tab2:
         st.info("🚫 لا توجد أي أسهم مستوفية لشروط البيع الآن.")
 
 st.write("---")
-st.info("💡 التحليل يعتمد على مؤشرات القوة النسبية (RSI) والمتوسطات المتحركة (EMA). هذه أداة مساعدة وليست توصية استثمارية ملزمة.")
+st.info("💡 التحليل يعتمد على مؤشرات القوة النسبية (RSI) والمتوسطات المتحركة (EMA). مرتبة حسب قوة الإشارة.")
