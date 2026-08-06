@@ -290,8 +290,8 @@ with col2:
 
 filtered = df[(df["short_term_score"] >= min_short) & (df["long_term_score"] >= min_long)]
 
-st.markdown("##### 🏢 فلتر القطاع والسيولة")
-scol1, scol2 = st.columns(2)
+st.markdown("##### 🏢 فلتر القطاع والسيولة ومؤشر EGX30/70")
+scol1, scol2, scol3 = st.columns(3)
 with scol1:
     if "sector" in filtered.columns:
         available_sectors = sorted(filtered["sector"].dropna().unique().tolist())
@@ -304,11 +304,22 @@ with scol2:
         f"إخفاء الأسهم اللي متوسط تداولها أقل من الحد المدخل ({int(min_avg_trade_value):,})",
         value=False,
     )
+with scol3:
+    if "egx_index" in filtered.columns:
+        available_indices = sorted(filtered["egx_index"].dropna().unique().tolist())
+        selected_indices = st.multiselect(
+            "عضوية EGX30/70 (لأسهم مصر بس - سيبه فاضي لعرض الكل)",
+            options=available_indices, default=[],
+        )
+    else:
+        selected_indices = []
 
 if selected_sectors:
     filtered = filtered[filtered["sector"].isin(selected_sectors)]
 if "meets_liquidity_min" in filtered.columns and liquidity_filter:
     filtered = filtered[filtered["meets_liquidity_min"] == True]
+if selected_indices:
+    filtered = filtered[filtered["egx_index"].isin(selected_indices)]
 
 st.markdown("##### 📐 فلاتر قاعدة جراهام (المستثمر الدفاعي)")
 if provider_choice == "yahoo":
@@ -381,7 +392,7 @@ with tab1:
         "باندز، مقاومة فنية طبيعية). لو فاضي (None)، السهم بالفعل فوق النطاق "
         "العلوي (متشبع شرائياً) ومفيش هامش صعود فني واضح متبقي دلوقتي."
     )
-    short_cols = ["ticker", "price", "price_is_live", "price_source", "rsi", "macd_hist", "above_sma20",
+    short_cols = ["ticker", "egx_index", "price", "price_is_live", "price_source", "rsi", "macd_hist", "above_sma20",
                   "target_sell_price", "target_sell_upside_%", "short_term_score", "التوصية"]
     short_cols = [c for c in short_cols if c in filtered.columns]  # حماية لو عمود جديد لسه مش موجود في النسخة الشغالة
     st.dataframe(
@@ -396,7 +407,7 @@ with tab1:
 
 with tab2:
     st.subheader("أفضل الأسهم للمدى الطويل (فني + مالي شامل)")
-    long_cols = ["ticker", "price", "price_is_live", "ret_1y_%", "volatility_%", "long_term_score", "التوصية"]
+    long_cols = ["ticker", "egx_index", "price", "price_is_live", "ret_1y_%", "volatility_%", "long_term_score", "التوصية"]
     if include_fundamentals:
         # إضافة المؤشرات الجديدة للجدول للمدى الطويل
         long_cols += ["pe_ratio", "pb_ratio", "dividend_yield_%", "profit_margin_%", "roe_%",
