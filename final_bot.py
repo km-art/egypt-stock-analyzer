@@ -983,6 +983,46 @@ def get_currency(ticker: str) -> str:
     return TICKER_TO_CURRENCY.get(ticker, "EGP")
 
 
+
+# ---------------------------------------------------------------------------
+# تصنيف EGX30 / EGX70 - مبني على بيانات investing.com (قد تتغيّر مع أي
+# مراجعة نصف سنوية لمؤشرات EGX - آخر تحقق تم يدوياً، حدّثها لو لاحظت تغيير)
+# ---------------------------------------------------------------------------
+EGX30_TICKERS = {
+    "ABUK.CA", "ADIB.CA", "AMOC.CA", "ARCC.CA", "BTFH.CA", "CCAP.CA", "COMI.CA", "EAST.CA",
+    "EFID.CA", "EFIH.CA", "EGAL.CA", "EGCH.CA", "EMFD.CA", "ETEL.CA", "FWRY.CA", "GBCO.CA",
+    "HELI.CA", "HRHO.CA", "ISPH.CA", "JUFO.CA", "MCQE.CA", "OIH.CA", "ORAS.CA", "ORHD.CA",
+    "ORWE.CA", "PHDC.CA", "RAYA.CA", "RMDA.CA", "TMGH.CA", "VLMR.CA", "VLMRA.CA",
+}
+
+EGX70_TICKERS = {
+    "ACTF.CA", "AFDI.CA", "AFMC.CA", "AIDC.CA", "ALCN.CA", "AMER.CA", "AMIA.CA", "ARAB.CA",
+    "ASCM.CA", "ASPI.CA", "ATLC.CA", "ATQA.CA", "BIOC.CA", "CIEB.CA", "CNFN.CA", "COSG.CA",
+    "CSAG.CA", "DAPH.CA", "DSCW.CA", "ECAP.CA", "EEII.CA", "EFIC.CA", "EGTS.CA", "EHDR.CA",
+    "ENGC.CA", "ETRS.CA", "EXPA.CA", "GPIM.CA", "HDBK.CA", "IDRE.CA", "IFAP.CA", "ISMA.CA",
+    "ISMQ.CA", "KABO.CA", "KRDI.CA", "LCSW.CA", "MASR.CA", "MCRO.CA", "MEPA.CA", "MFPC.CA",
+    "MOED.CA", "MPCI.CA", "MPCO.CA", "MPRC.CA", "MTIE.CA", "NCCW.CA", "NIPH.CA", "OBRI.CA",
+    "OCDI.CA", "PHAR.CA", "POUL.CA", "PRCL.CA", "RACC.CA", "SCEM.CA", "SDTI.CA", "SIPC.CA",
+    "SKPC.CA", "SPHT.CA", "SVCE.CA", "SWDY.CA", "TALM.CA", "TANM.CA", "TAQA.CA", "UEGC.CA",
+    "UNIP.CA", "VALU.CA", "ZEOT.CA", "ZMID.CA",
+}
+
+
+def get_egx_index(ticker: str) -> str:
+    """
+    يرجع "EGX30" لو السهم من أكبر/أنشط 30 سهم، "EGX70" لو من الشريحة التالية
+    (أسهم متوسطة نشطة)، أو "خارج EGX30/70" لباقي الأسهم المصرية أو أي سهم
+    من سوق تاني (أمريكا/الإمارات).
+    """
+    if ticker in EGX30_TICKERS:
+        return "EGX30"
+    if ticker in EGX70_TICKERS:
+        return "EGX70"
+    if ticker in ALL_EGX_STOCKS.values():
+        return "خارج EGX30/70"
+    return "غير منطبق (مش سهم مصري)"
+
+
 def calculate_indicators(df):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(-1)
@@ -1435,7 +1475,7 @@ with tab2:
         value=False,
     )
 
-    fcol1, fcol2 = st.columns(2)
+    fcol1, fcol2, fcol3 = st.columns(3)
     with fcol1:
         available_sectors = sorted(set(scan_sector_map.values())) if scan_sector_map else []
         selected_sectors_scan = st.multiselect(
@@ -1451,6 +1491,12 @@ with tab2:
         )
         min_liquidity_value_scan = st.number_input(
             "أو خصّص القيمة بنفسك", min_value=0, value=int(default_liquidity_scan), step=100_000,
+        )
+    with fcol3:
+        selected_indices_scan = st.multiselect(
+            "📊 فلتر عضوية EGX30/70 (لأسهم مصر بس - سيبه فاضي لعرض الكل)",
+            options=["EGX30", "EGX70", "خارج EGX30/70"],
+            default=[],
         )
 
     if st.button("تشغيل الفرز والترتيب الاحترافي اللحظي 🚀"):
@@ -1514,6 +1560,9 @@ with tab2:
                     sector = scan_sector_map.get(ticker, "غير مصنف")
                     if selected_sectors_scan and sector not in selected_sectors_scan:
                         continue
+
+                    if selected_indices_scan and get_egx_index(ticker) not in selected_indices_scan:
+                        continue
                         
                     is_new_cross = (prev_row['EMA9'] <= prev_row['EMA21']) and (e9 > e21)
                     
@@ -1552,6 +1601,7 @@ with tab2:
                         "اسم الشركة": name,
                         "الرمز البرمجي": ticker,
                         "القطاع": sector,
+                        "مؤشر EGX30/70": get_egx_index(ticker),
                         "العملة": currency,
                         "السعر الحالي": round(p, 2),
                         "سعر بيع مستهدف (تقني)": target_sell_price,
