@@ -197,6 +197,45 @@ def get_is_major_exporter(ticker: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# تصنيف EGX30 / EGX70 - مبني على بيانات investing.com (قد تتغيّر مع أي
+# مراجعة نصف سنوية لمؤشرات EGX - آخر تحقق تم يدوياً، حدّثها لو لاحظت تغيير)
+# ---------------------------------------------------------------------------
+EGX30_TICKERS = {
+    "ABUK.CA", "ADIB.CA", "AMOC.CA", "ARCC.CA", "BTFH.CA", "CCAP.CA", "COMI.CA", "EAST.CA",
+    "EFID.CA", "EFIH.CA", "EGAL.CA", "EGCH.CA", "EMFD.CA", "ETEL.CA", "FWRY.CA", "GBCO.CA",
+    "HELI.CA", "HRHO.CA", "ISPH.CA", "JUFO.CA", "MCQE.CA", "OIH.CA", "ORAS.CA", "ORHD.CA",
+    "ORWE.CA", "PHDC.CA", "RAYA.CA", "RMDA.CA", "TMGH.CA", "VLMR.CA", "VLMRA.CA",
+}
+
+EGX70_TICKERS = {
+    "ACTF.CA", "AFDI.CA", "AFMC.CA", "AIDC.CA", "ALCN.CA", "AMER.CA", "AMIA.CA", "ARAB.CA",
+    "ASCM.CA", "ASPI.CA", "ATLC.CA", "ATQA.CA", "BIOC.CA", "CIEB.CA", "CNFN.CA", "COSG.CA",
+    "CSAG.CA", "DAPH.CA", "DSCW.CA", "ECAP.CA", "EEII.CA", "EFIC.CA", "EGTS.CA", "EHDR.CA",
+    "ENGC.CA", "ETRS.CA", "EXPA.CA", "GPIM.CA", "HDBK.CA", "IDRE.CA", "IFAP.CA", "ISMA.CA",
+    "ISMQ.CA", "KABO.CA", "KRDI.CA", "LCSW.CA", "MASR.CA", "MCRO.CA", "MEPA.CA", "MFPC.CA",
+    "MOED.CA", "MPCI.CA", "MPCO.CA", "MPRC.CA", "MTIE.CA", "NCCW.CA", "NIPH.CA", "OBRI.CA",
+    "OCDI.CA", "PHAR.CA", "POUL.CA", "PRCL.CA", "RACC.CA", "SCEM.CA", "SDTI.CA", "SIPC.CA",
+    "SKPC.CA", "SPHT.CA", "SVCE.CA", "SWDY.CA", "TALM.CA", "TANM.CA", "TAQA.CA", "UEGC.CA",
+    "UNIP.CA", "VALU.CA", "ZEOT.CA", "ZMID.CA",
+}
+
+
+def get_egx_index(ticker: str) -> str:
+    """
+    يرجع "EGX30" لو السهم من أكبر/أنشط 30 سهم، "EGX70" لو من الشريحة التالية
+    (أسهم متوسطة نشطة)، أو "خارج EGX30/70" لباقي الأسهم المصرية أو أي سهم
+    من سوق تاني (أمريكا/الإمارات).
+    """
+    if ticker in EGX30_TICKERS:
+        return "EGX30"
+    if ticker in EGX70_TICKERS:
+        return "EGX70"
+    if ticker in EGX_TICKERS:
+        return "خارج EGX30/70"
+    return "غير منطبق (مش سهم مصري)"
+
+
 HISTORY_DAYS = 365 + 30
 
 # الحد الأدنى الافتراضي لمتوسط قيمة التداول اليومية (بالعملة المحلية للسهم) عشان
@@ -491,6 +530,7 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
     result = {
         "ticker": ticker,
         "sector": get_sector(ticker),
+        "egx_index": get_egx_index(ticker),
         "is_major_exporter": get_is_major_exporter(ticker),
         "price": round(last_price, 2),
         "price_is_live": price_is_live,
