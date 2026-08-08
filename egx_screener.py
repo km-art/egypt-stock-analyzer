@@ -476,6 +476,19 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
         target_sell_price = None
         target_sell_upside_pct = None
 
+    # وقف خسارة مقترح (تقني) = النطاق السفلي لبولينجر باندز - دعم فني طبيعي.
+    # لو السعر الحالي تحته أصلاً، يبقى السهم كسر الدعم فعلاً (إشارة خطر أعلى
+    # من كونه مجرد "وقف خسارة مستقبلي" - نعرضه برضو بس نوضح إنه مكسور).
+    last_lower_bb = float(lower_bb.iloc[-1]) if not pd.isna(lower_bb.iloc[-1]) else None
+    if last_lower_bb is not None:
+        stop_loss_price = round(last_lower_bb, 2)
+        stop_loss_downside_pct = round((stop_loss_price / last_price - 1) * 100, 1)
+        stop_loss_already_broken = last_price < last_lower_bb
+    else:
+        stop_loss_price = None
+        stop_loss_downside_pct = None
+        stop_loss_already_broken = None
+
     # متوسط قيمة التداول اليومية (جنيه) = السعر × الكمية، متوسط على آخر LIQUIDITY_LOOKBACK_DAYS يوم
     trade_value = close * volume
     avg_trade_value = float(trade_value.rolling(LIQUIDITY_LOOKBACK_DAYS).mean().iloc[-1])
@@ -547,6 +560,9 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
         "meets_liquidity_min": meets_liquidity_min,
         "target_sell_price": target_sell_price,
         "target_sell_upside_%": target_sell_upside_pct,
+        "stop_loss_price": stop_loss_price,
+        "stop_loss_downside_%": stop_loss_downside_pct,
+        "stop_loss_already_broken": stop_loss_already_broken,
         "short_term_score": short_score,
         "long_term_technical_score": long_score,
     }
