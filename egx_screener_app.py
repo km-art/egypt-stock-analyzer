@@ -21,6 +21,46 @@ st.caption(
 # ---------------------------------------------------------------------------
 # الشريط الجانبي: اختيار السوق وإدارة الأسهم والإعدادات
 # ---------------------------------------------------------------------------
+_WATCHLIST_CSV = "watchlist.csv"
+
+
+def load_watchlist() -> list[str]:
+    if os.path.exists(_WATCHLIST_CSV):
+        try:
+            return pd.read_csv(_WATCHLIST_CSV)["ticker"].dropna().tolist()
+        except Exception:
+            return []
+    return []
+
+
+def save_watchlist(tickers: list[str]):
+    pd.DataFrame({"ticker": tickers}).to_csv(_WATCHLIST_CSV, index=False)
+
+
+st.sidebar.header("⭐ المفضّلة")
+watchlist = load_watchlist()
+with st.sidebar.expander(f"إدارة المفضّلة ({len(watchlist)} سهم)"):
+    if watchlist:
+        st.write(", ".join(watchlist))
+    wl_col1, wl_col2 = st.columns(2)
+    with wl_col1:
+        wl_add = st.text_input("أضف رمز (زي COMI.CA)", key="wl_add")
+        if st.button("➕ إضافة للمفضّلة"):
+            if wl_add and wl_add.strip() not in watchlist:
+                watchlist.append(wl_add.strip())
+                save_watchlist(watchlist)
+                st.success(f"✅ اتضاف {wl_add.strip()}")
+                st.rerun()
+    with wl_col2:
+        wl_remove = st.text_input("احذف رمز", key="wl_remove")
+        if st.button("🗑️ حذف من المفضّلة"):
+            if wl_remove and wl_remove.strip() in watchlist:
+                watchlist.remove(wl_remove.strip())
+                save_watchlist(watchlist)
+                st.success(f"🗑️ اتشال {wl_remove.strip()}")
+                st.rerun()
+    load_watchlist_clicked = st.button("📋 حمّل المفضّلة في صندوق التحليل تحت")
+
 st.sidebar.header("🌍 اختيار السوق")
 
 selected_markets = st.sidebar.multiselect(
@@ -42,7 +82,9 @@ st.sidebar.header("⚙️ الإعدادات وإدارة الأسهم")
 # 1. إدارة ملف حفظ الأسهم لتجنب فتح محرر الأكواد
 SAVED_TICKERS_FILE = "custom_tickers.txt"
 
-if os.path.exists(SAVED_TICKERS_FILE):
+if load_watchlist_clicked and watchlist:
+    current_tickers_list = "\n".join(watchlist)
+elif os.path.exists(SAVED_TICKERS_FILE):
     with open(SAVED_TICKERS_FILE, "r", encoding="utf-8") as f:
         current_tickers_list = f.read()
 else:
@@ -356,7 +398,10 @@ if "price_is_live" in df.columns:
             "السعر شبه اللحظي مش متاح دلوقتي من المصدر المختار."
         )
 
-tab0, tab1, tab2, tab3 = st.tabs(["🎯 التوصية", "📊 المدى القصير", "📈 المدى الطويل + المالي", "🗂 كل البيانات والمؤشرات"])
+tab0, tab1, tab2, tab3, tab4 = st.tabs([
+    "🎯 التوصية", "📊 المدى القصير", "📈 المدى الطويل + المالي",
+    "🗂 كل البيانات والمؤشرات", "💼 محفظتي",
+])
 
 with tab0:
     st.subheader("التوصية النهائية (فني + مالي مع بعض)")
@@ -389,11 +434,13 @@ with tab1:
     st.subheader("أفضل الأسهم للمدى القصير")
     st.caption(
         "💡 `target_sell_price` = سعر بيع مستهدف تقني (النطاق العلوي لبولينجر "
-        "باندز، مقاومة فنية طبيعية). لو فاضي (None)، السهم بالفعل فوق النطاق "
-        "العلوي (متشبع شرائياً) ومفيش هامش صعود فني واضح متبقي دلوقتي."
+        "باندز). `stop_loss_price` = وقف خسارة مقترح (النطاق السفلي). لو "
+        "`stop_loss_already_broken` = True، يبقى السعر كسر الدعم فعلاً - إشارة "
+        "خطر، مش مجرد وقف خسارة مستقبلي."
     )
     short_cols = ["ticker", "egx_index", "price", "price_is_live", "price_source", "rsi", "macd_hist", "above_sma20",
-                  "target_sell_price", "target_sell_upside_%", "short_term_score", "التوصية"]
+                  "target_sell_price", "target_sell_upside_%", "stop_loss_price", "stop_loss_downside_%",
+                  "stop_loss_already_broken", "short_term_score", "التوصية"]
     short_cols = [c for c in short_cols if c in filtered.columns]  # حماية لو عمود جديد لسه مش موجود في النسخة الشغالة
     st.dataframe(
         filtered.sort_values("short_term_score", ascending=False)[short_cols],
@@ -432,6 +479,94 @@ with tab3:
         file_name="egx_screener_results.csv",
         mime="text/csv",
     )
+
+_PORTFOLIO_CSV = "portfolio.csv"
+
+
+def load_portfolio() -> pd.DataFrame:
+    if os.path.exists(_PORTFOLIO_CSV):
+        try:
+            return pd.read_csv(_PORTFOLIO_CSV)
+        except Exception:
+            pass
+    return pd.DataFrame(columns=["ticker", "entry_price", "quantity"])
+
+
+def save_portfolio(df_p: pd.DataFrame):
+    df_p.to_csv(_PORTFOLIO_CSV, index=False)
+
+
+with tab4:
+    st.subheader("💼 محفظتي - تتبع الربح/الخسارة")
+    st.caption(
+        "سجّل الأسهم اللي فعلاً اشتريتها بسعر دخولك الحقيقي، وهنحسبلك الربح/"
+        "الخسارة تلقائياً بالمقارنة مع آخر سعر متاح من نتائج التحليل فوق. "
+        "لازم تكون شغّلت التحليل على نفس الأسهم دي الأول عشان نلاقي سعرها الحالي."
+    )
+
+    portfolio_df = load_portfolio()
+
+    pf_col1, pf_col2, pf_col3 = st.columns(3)
+    with pf_col1:
+        pf_ticker = st.text_input("رمز السهم", key="pf_ticker")
+    with pf_col2:
+        pf_entry = st.number_input("سعر الدخول", min_value=0.0, step=0.01, key="pf_entry")
+    with pf_col3:
+        pf_qty = st.number_input("الكمية (اختياري)", min_value=0.0, step=1.0, key="pf_qty", value=0.0)
+
+    pf_add_col, pf_remove_col = st.columns(2)
+    with pf_add_col:
+        if st.button("➕ إضافة/تحديث في المحفظة"):
+            if pf_ticker and pf_entry > 0:
+                portfolio_df = portfolio_df[portfolio_df["ticker"] != pf_ticker.strip()]
+                new_row = pd.DataFrame([{
+                    "ticker": pf_ticker.strip(), "entry_price": pf_entry, "quantity": pf_qty,
+                }])
+                portfolio_df = pd.concat([portfolio_df, new_row], ignore_index=True)
+                save_portfolio(portfolio_df)
+                st.success(f"✅ اتحفظ {pf_ticker} بسعر دخول {pf_entry}")
+                st.rerun()
+            else:
+                st.warning("لازم رمز السهم وسعر دخول أكبر من صفر.")
+    with pf_remove_col:
+        if st.button("🗑️ حذف من المحفظة"):
+            if pf_ticker:
+                portfolio_df = portfolio_df[portfolio_df["ticker"] != pf_ticker.strip()]
+                save_portfolio(portfolio_df)
+                st.success(f"🗑️ اتشال {pf_ticker} من المحفظة")
+                st.rerun()
+
+    if portfolio_df.empty:
+        st.info("محفظتك فاضية - ضيف أول سهم من الفورم فوق.")
+    else:
+        # نربط كل سهم في المحفظة بسعره الحالي من نتائج التحليل (لو موجود)
+        price_lookup = df.set_index("ticker")["price"].to_dict() if not df.empty else {}
+        rows = []
+        for _, row in portfolio_df.iterrows():
+            current_price = price_lookup.get(row["ticker"])
+            entry = row["entry_price"]
+            qty = row.get("quantity", 0) or 0
+            if current_price is not None:
+                pnl_pct = round((current_price / entry - 1) * 100, 2)
+                pnl_value = round((current_price - entry) * qty, 2) if qty else None
+            else:
+                pnl_pct = None
+                pnl_value = None
+            rows.append({
+                "الرمز": row["ticker"],
+                "سعر الدخول": entry,
+                "الكمية": qty if qty else "—",
+                "السعر الحالي": current_price if current_price is not None else "شغّل التحليل عليه الأول",
+                "الربح/الخسارة %": pnl_pct,
+                "الربح/الخسارة (قيمة)": pnl_value,
+            })
+
+        pf_display = pd.DataFrame(rows)
+        st.dataframe(pf_display, use_container_width=True, hide_index=True)
+
+        total_value_rows = [r["الربح/الخسارة (قيمة)"] for r in rows if r["الربح/الخسارة (قيمة)"] is not None]
+        if total_value_rows:
+            st.metric("إجمالي الربح/الخسارة (للأسهم اللي معاها كمية)", f"{sum(total_value_rows):,.2f}")
 
 st.caption(
     "⚠️ إخلاء مسؤولية: هذا التطبيق أداة تحليلية تعليمية فقط، ولا يُعتبر استشارة مالية. الأداء التاريخي لا يضمن نتائج مستقبلية."
