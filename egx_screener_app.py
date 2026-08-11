@@ -363,6 +363,14 @@ if "meets_liquidity_min" in filtered.columns and liquidity_filter:
 if selected_indices:
     filtered = filtered[filtered["egx_index"].isin(selected_indices)]
 
+if "thin_float_risk" in filtered.columns:
+    hide_thin_float = st.checkbox(
+        "⚠️ إخفاء الأسهم اللي عليها تحذير 'تعويم رقيق' (سيولة ضعيفة + تقلب غير معتاد)",
+        value=False,
+    )
+    if hide_thin_float:
+        filtered = filtered[filtered["thin_float_risk"] != True]
+
 st.markdown("##### 📐 فلاتر قاعدة جراهام (المستثمر الدفاعي)")
 if provider_choice == "yahoo":
     st.caption(
@@ -454,7 +462,18 @@ with tab1:
 
 with tab2:
     st.subheader("أفضل الأسهم للمدى الطويل (فني + مالي شامل)")
-    long_cols = ["ticker", "egx_index", "price", "price_is_live", "ret_1y_%", "volatility_%", "long_term_score", "التوصية"]
+    st.caption(
+        "💡 `relative_strength_1y_%` = عائد السهم ناقص عائد المؤشر المرجعي "
+        "لنفس الفترة (موجب = بيتفوق على السوق فعلاً، مش مجرد راكب موجة صاعدة "
+        "عامة). `volatility_percentile` = هل تقلب السهم دلوقتي أعلى من عادته "
+        "هو نفسه تاريخياً (فوق 80 يستاهل حذر). `thin_float_risk` = تحذير "
+        "سيولة ضعيفة + تقلب غير معتاد مع بعض - علامة على تعويم رقيق ممكن "
+        "يحرّك السعر بعنف من غير سبب حقيقي (زي حالات BIOC ومطاحن الإسكندرية)."
+    )
+    long_cols = ["ticker", "egx_index", "price", "price_is_live", "ret_1y_%", "volatility_%",
+                 "pct_from_52w_high", "pct_from_52w_low", "relative_strength_1y_%",
+                 "volatility_percentile", "volume_trend_%", "thin_float_risk",
+                 "long_term_score", "التوصية"]
     if include_fundamentals:
         # إضافة المؤشرات الجديدة للجدول للمدى الطويل
         long_cols += ["pe_ratio", "pb_ratio", "dividend_yield_%", "profit_margin_%", "roe_%",
