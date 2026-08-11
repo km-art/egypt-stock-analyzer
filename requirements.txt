@@ -3,3 +3,4 @@ yfinance
 pandas
 plotly
 curl_cffi
+git+https://github.com/rongardF/tvdatafeed.git
