@@ -236,6 +236,22 @@ def get_egx_index(ticker: str) -> str:
     return "غير منطبق (مش سهم مصري)"
 
 
+# مؤشرات مرجعية لكل سوق (اتأكدنا من الرموز فعلياً عبر بحث ويب - مش تخمين)
+BENCHMARK_TICKERS = {
+    "egx": "^CASE30",   # مؤشر EGX30 الرسمي
+    "us": "^GSPC",       # S&P 500
+    "uae": "DFMGI.AE",   # مؤشر دبي المالي العام (أقرب تقريب متاح - مؤشراتنا للإمارات بتجمع DFM وADX مع بعض)
+}
+
+
+def get_market_key(ticker: str) -> str | None:
+    """يرجع 'egx'/'us'/'uae' حسب السوق اللي السهم منه، أو None لو مش لاقيه."""
+    for key, m in MARKETS.items():
+        if ticker in m["tickers"]:
+            return key
+    return None
+
+
 HISTORY_DAYS = 365 + 30
 
 # الحد الأدنى الافتراضي لمتوسط قيمة التداول اليومية (بالعملة المحلية للسهم) عشان
@@ -390,12 +406,41 @@ def compute_verdict(row: dict, include_fundamentals: bool) -> dict:
     return {"التوصية": "🟡 انتظار (إشارات متضاربة)", "ترتيب_التوصية": 1}
 
 
+def fetch_benchmark_return(provider, market_key: str, cache: dict) -> float | None:
+    """
+    يجيب عائد سنة للمؤشر المرجعي للسوق ده (EGX30/S&P500/DFM General)، مع
+    كاش بسيط عشان نجيبه مرة واحدة بس لكل سوق مش لكل سهم على حدة (توفير
+    كبير في عدد الطلبات لما بتحلل عشرات/مئات الأسهم من نفس السوق).
+    """
+    if market_key in cache:
+        return cache[market_key]
+
+    benchmark_ticker = BENCHMARK_TICKERS.get(market_key)
+    if not benchmark_ticker:
+        cache[market_key] = None
+        return None
+
+    try:
+        df = provider.get_price_history(benchmark_ticker, period_days=400)
+        if df is None or df.empty or len(df) < 60:
+            cache[market_key] = None
+            return None
+        close = df["Close"].squeeze()
+        ret_1y = float((close.iloc[-1] / close.iloc[0] - 1) * 100)
+        cache[market_key] = ret_1y
+        return ret_1y
+    except Exception as e:
+        print(f"⚠️  تعذر تحميل المؤشر المرجعي {benchmark_ticker} ({e}).")
+        cache[market_key] = None
+        return None
+
+
 # ---------------------------------------------------------------------------
 # 3) تحميل البيانات وتحليل سهم واحد
 # ---------------------------------------------------------------------------
 def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
                     min_avg_trade_value: float = DEFAULT_MIN_AVG_TRADE_VALUE,
-                    td_live_price=None, tv_live_price=None) -> dict | None:
+                    td_live_price=None, tv_live_price=None, benchmark_cache: dict = None) -> dict | None:
     yahoo_symbol = resolve_symbol(ticker)  # ممكن يبقى مختلف عن ticker لو فيه رمز بديل مسجّل
     try:
         df = provider.get_price_history(yahoo_symbol, period_days=HISTORY_DAYS)
@@ -500,6 +545,45 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
     daily_ret = close.pct_change().dropna()
     volatility = float(daily_ret.std() * np.sqrt(252) * 100)
 
+    # القرب من أعلى/أقل سعر خلال آخر سنة تقريباً (كل البيانات المتاحة عندنا)
+    period_high = float(close.max())
+    period_low = float(close.min())
+    pct_from_52w_high = round((last_price / period_high - 1) * 100, 1)
+    pct_from_52w_low = round((last_price / period_low - 1) * 100, 1)
+
+    # القوة النسبية مقابل المؤشر المرجعي (EGX30/S&P500/DFM) - بيفرّق بين سهم
+    # بيصعد فعلاً بقوته الذاتية وسهم بيصعد لمجرد إن السوق كله صاعد
+    market_key = get_market_key(ticker)
+    benchmark_ret_1y = None
+    relative_strength_1y = None
+    if benchmark_cache is not None and market_key is not None:
+        benchmark_ret_1y = fetch_benchmark_return(provider, market_key, benchmark_cache)
+        if benchmark_ret_1y is not None:
+            relative_strength_1y = round(ret_1y - benchmark_ret_1y, 1)
+
+    # نسبة التقلب المئوية: هل تقلب السهم دلوقتي أعلى/أقل من تقلبه المعتاد هو
+    # نفسه تاريخياً؟ بيكشف حالات شذوذ (سهم فجأة بقى متقلب أكتر من عادته)
+    rolling_vol = daily_ret.rolling(20).std() * np.sqrt(252) * 100
+    rolling_vol = rolling_vol.dropna()
+    if len(rolling_vol) >= 20:
+        current_vol = rolling_vol.iloc[-1]
+        volatility_percentile = round((rolling_vol < current_vol).mean() * 100, 1)
+    else:
+        volatility_percentile = None
+
+    # اتجاه الفوليوم: هل متوسط آخر 5 أيام أعلى أو أقل من متوسط آخر 20 يوم؟
+    # موجب = تراكم/اهتمام متزايد، سالب = اهتمام بيقل
+    vol_ma5 = float(volume.rolling(5).mean().iloc[-1])
+    vol_ma20_full = float(volume.rolling(20).mean().iloc[-1])
+    volume_trend_pct = round((vol_ma5 / vol_ma20_full - 1) * 100, 1) if vol_ma20_full > 0 else None
+
+    # علم "خطر تعويم رقيق": سيولة ضعيفة + تقلب أعلى من عادة السهم بكتير مع
+    # بعض = مؤشر على إن سهم صغير التعويم بيتحرك بعنف بسبب كمية بسيطة من
+    # التداول، مش بسبب تغيّر حقيقي في قيمته (زي أمثلة BIOC ومطاحن الإسكندرية)
+    thin_float_risk = (
+        (not meets_liquidity_min) and volatility_percentile is not None and volatility_percentile >= 80
+    )
+
     # نظام تقييم قصير المدى
     short_score = 50
     if last_rsi < 30:
@@ -556,6 +640,13 @@ def analyze_ticker(ticker: str, provider, include_fundamentals: bool = True,
         "ret_3m_%": round(ret_3m, 1) if not np.isnan(ret_3m) else None,
         "ret_1y_%": round(ret_1y, 1),
         "volatility_%": round(volatility, 1),
+        "pct_from_52w_high": pct_from_52w_high,
+        "pct_from_52w_low": pct_from_52w_low,
+        "benchmark_ret_1y_%": round(benchmark_ret_1y, 1) if benchmark_ret_1y is not None else None,
+        "relative_strength_1y_%": relative_strength_1y,
+        "volatility_percentile": volatility_percentile,
+        "volume_trend_%": volume_trend_pct,
+        "thin_float_risk": thin_float_risk,
         "avg_trade_value": round(avg_trade_value, 0),
         "meets_liquidity_min": meets_liquidity_min,
         "target_sell_price": target_sell_price,
@@ -622,6 +713,10 @@ def run_screener(tickers=None, include_fundamentals=True, save_csv=True, verbose
     if provider is None:
         provider = get_provider(provider_name, **(provider_kwargs or {}))
 
+    # كاش عوائد المؤشرات المرجعية - بيتحسب مرة واحدة بس لكل سوق طول التشغيلة
+    # دي (مش لكل سهم)، عشان نتفادى تكرار تحميل نفس المؤشر مئات المرات
+    benchmark_cache = {}
+
     tickers = tickers or EGX_TICKERS
     results = []
     for t in tickers:
@@ -629,7 +724,8 @@ def run_screener(tickers=None, include_fundamentals=True, save_csv=True, verbose
             print(f"جاري تحليل {t} ...")
         r = analyze_ticker(t, provider, include_fundamentals=include_fundamentals,
                             min_avg_trade_value=min_avg_trade_value,
-                            td_live_price=td_live_price, tv_live_price=tv_live_price)
+                            td_live_price=td_live_price, tv_live_price=tv_live_price,
+                            benchmark_cache=benchmark_cache)
         if r:
             results.append(r)
         time.sleep(0.5)  
