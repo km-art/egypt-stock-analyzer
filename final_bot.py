@@ -26,6 +26,58 @@ def get_yf_session():
 
 YF_SESSION = get_yf_session()
 
+# ---------------------------------------------------------------------------
+# مصدر بيانات مصر (EGX): TradingView بدل Yahoo
+# ---------------------------------------------------------------------------
+# Yahoo Finance وقفت تحدّث بيانات بورصة مصر (لاحظنا آخر تحديث متجمد على تاريخ
+# قديم لكل الأسهم المصرية). TradingView عندها بيانات محدّثة يومياً وبتغطية
+# أقوى لـ EGX، فبنستخدم مكتبة tvDatafeed (غير رسمية، بتقرا نفس البيانات اللي
+# موقع TradingView بيعرضها) عشان نجيب تاريخ أسعار كامل (Open/High/Low/Close/
+# Volume) بديل عن Yahoo لسوق مصر بس. أمريكا والإمارات فاضلين على Yahoo زي ما
+# هما لأن بياناتهم شغالة تمام.
+#
+# ملحوظة: المكتبة غير رسمية (بتحاكي طلبات الموقع الداخلية)، ممكن تتعطل لو
+# TradingView غيّرت حاجة من غير سابق إنذار - لو حصل كده، هترجع النتيجة فاضية
+# وهيظهر السهم في "الأسهم اللي اتخطاها" بدل ما الكود يقع.
+@st.cache_resource
+def get_tv_datafeed():
+    try:
+        from tvDatafeed import TvDatafeed
+        return TvDatafeed()  # وضع "بدون تسجيل دخول" - شغال لمعظم أسهم EGX
+    except Exception:
+        return None
+
+
+TV_DATAFEED = get_tv_datafeed()
+
+
+def fetch_egx_history_tv(egx_ticker: str, n_bars: int = 150):
+    """
+    يجيب تاريخ أسعار سهم مصري من TradingView (مش Yahoo) ويرجعه بنفس صيغة
+    yfinance المعتادة (أعمدة Open/High/Low/Close/Volume) عشان باقي الكود
+    (calculate_indicators وغيرها) يشتغل من غير أي تعديل.
+    يرجع DataFrame فاضي لو فشل (بدل ما يرمي Exception ويوقف المسح كله).
+    """
+    if TV_DATAFEED is None:
+        return pd.DataFrame()
+    try:
+        from tvDatafeed import Interval
+        bare_symbol = egx_ticker[:-3] if egx_ticker.endswith(".CA") else egx_ticker
+        hist = TV_DATAFEED.get_hist(
+            symbol=bare_symbol, exchange="EGX",
+            interval=Interval.in_daily, n_bars=n_bars,
+        )
+        if hist is None or hist.empty:
+            return pd.DataFrame()
+        hist = hist.rename(columns={
+            "open": "Open", "high": "High", "low": "Low",
+            "close": "Close", "volume": "Volume",
+        })
+        return hist[["Open", "High", "Low", "Close", "Volume"]]
+    except Exception:
+        return pd.DataFrame()
+
+
 # إعدادات الصفحة والمظهر العام
 st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
@@ -1257,6 +1309,13 @@ def score_fundamentals(f: dict) -> int:
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_single_stock(ticker: str, period: str = "100d"):
     """تحميل بيانات سهم واحد مع تخزين مؤقت (cache) لمدة 5 دقايق لتقليل الطلبات المكررة."""
+    if ticker.endswith(".CA"):
+        # مصر: TradingView بدل Yahoo (Yahoo متجمدة لأسهم مصر)
+        try:
+            n_bars = int(period.rstrip("d")) if period.rstrip("d").isdigit() else 150
+        except Exception:
+            n_bars = 150
+        return fetch_egx_history_tv(ticker, n_bars=max(n_bars, 50))
     return yf.download(resolve_symbol(ticker), period=period, progress=False, group_by='ticker', session=YF_SESSION)
 
 
@@ -1275,6 +1334,24 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
     tickers = list(tickers_tuple)
     all_frames = {}
     failed = []
+
+    # نفصل أسهم مصر (.CA) عن الباقي، لأن مصر بتتحمّل من TradingView مش Yahoo
+    egx_tickers = [t for t in tickers if t.endswith(".CA")]
+    other_tickers = [t for t in tickers if not t.endswith(".CA")]
+
+    # --- مصر: TradingView، سهم سهم (المكتبة مش بتدعم تحميل دفعات) ---
+    for t in egx_tickers:
+        try:
+            df_t = fetch_egx_history_tv(t, n_bars=150)
+            if df_t is not None and not df_t.dropna(how='all').empty:
+                all_frames[t] = df_t
+            else:
+                failed.append(t)
+        except Exception:
+            failed.append(t)
+        time.sleep(0.2)  # فاصل بسيط بين الطلبات عشان مانضغطش على TradingView
+
+    tickers = other_tickers
 
     for i in range(0, len(tickers), BATCH_SIZE):
         batch = tickers[i:i + BATCH_SIZE]
