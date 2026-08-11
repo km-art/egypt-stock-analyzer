@@ -8,6 +8,24 @@ import plotly.graph_objects as go
 import requests
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# جلسة yfinance مضادة للحظر (Yahoo بيحظر السيرفرات المشتركة زي Streamlit Cloud)
+# ---------------------------------------------------------------------------
+# الحل المعتمد حالياً من مجتمع yfinance: استخدام curl_cffi عشان يقلّد بصمة
+# متصفح حقيقي (TLS/JA3 fingerprint) بدل مكتبة requests العادية اللي Yahoo
+# بقى يعرفها ويحظرها بسهولة على الـ IPs المشتركة زي Streamlit Cloud.
+@st.cache_resource
+def get_yf_session():
+    try:
+        from curl_cffi import requests as cffi_requests
+        return cffi_requests.Session(impersonate="chrome")
+    except Exception:
+        # لو curl_cffi مش متثبتة لأي سبب، استخدم requests عادية بدل ما يقع الكود
+        return requests.Session()
+
+
+YF_SESSION = get_yf_session()
+
 # إعدادات الصفحة والمظهر العام
 st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
@@ -177,7 +195,7 @@ def get_live_price_yahoo(ticker: str) -> dict:
     الأقل تغطية. بيرجع لآخر إغلاق يومي تلقائياً لو فشل.
     """
     try:
-        fast = yf.Ticker(resolve_symbol(ticker)).fast_info
+        fast = yf.Ticker(resolve_symbol(ticker), session=YF_SESSION).fast_info
         price = fast.get("last_price") if hasattr(fast, "get") else getattr(fast, "last_price", None)
         if price is not None and price > 0:
             return {"price": float(price), "is_live": True}
@@ -1067,7 +1085,7 @@ def fetch_fundamentals(ticker: str) -> dict:
         "eps": None, "book_value_per_share": None,
     }
     try:
-        info = yf.Ticker(resolve_symbol(ticker)).info
+        info = yf.Ticker(resolve_symbol(ticker), session=YF_SESSION).info
     except Exception:
         return empty
 
@@ -1239,7 +1257,7 @@ def score_fundamentals(f: dict) -> int:
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_single_stock(ticker: str, period: str = "100d"):
     """تحميل بيانات سهم واحد مع تخزين مؤقت (cache) لمدة 5 دقايق لتقليل الطلبات المكررة."""
-    return yf.download(resolve_symbol(ticker), period=period, progress=False, group_by='ticker')
+    return yf.download(resolve_symbol(ticker), period=period, progress=False, group_by='ticker', session=YF_SESSION)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -1262,7 +1280,9 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
         batch = tickers[i:i + BATCH_SIZE]
         resolved_batch = [resolve_symbol(t) for t in batch]
         try:
-            data = yf.download(resolved_batch, period=period, progress=False, group_by='ticker', threads=True)
+            # threads=False لأن جلسة curl_cffi المشتركة ممكن تحصل معاها مشاكل
+            # لو استخدمناها من كذا thread في نفس الوقت
+            data = yf.download(resolved_batch, period=period, progress=False, group_by='ticker', threads=False, session=YF_SESSION)
         except Exception:
             failed.extend(batch)
             continue
@@ -1287,7 +1307,7 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
     if failed:
         for t in failed:
             try:
-                df_t = yf.download(resolve_symbol(t), period=period, progress=False, group_by='ticker')
+                df_t = yf.download(resolve_symbol(t), period=period, progress=False, group_by='ticker', session=YF_SESSION)
                 if df_t is not None and not df_t.dropna(how='all').empty:
                     all_frames[t] = df_t
                 else:
