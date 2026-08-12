@@ -1504,6 +1504,40 @@ with tab1:
                     c3.metric("مؤشر السيولة MFI", f"{mfi:.1f}")
                     c4.metric("حجم تداول اليوم (فوليوم)", f"{vol:,.0f}")
 
+                    # --- تصنيف السهم حسب نفس الأقسام الأربعة بتاعة المسح الشامل ---
+                    # (نفس الشرط بالظبط المستخدم في "مسح وترتيب السوق الاحترافي"،
+                    # عشان أي سهم تشوفه هنا يبقى نفس تصنيفه هناك بالظبط)
+                    vol_ma10 = float(last_row['Vol_MA10'].squeeze())
+                    if is_new_cross and rsi < 52:
+                        section_label = "🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم'"
+                        section_color = "#1abc9c"
+                    elif rsi < 35 and mfi < 35:
+                        section_label = "📥 ثانياً: رادار تصيد القيعان"
+                        section_color = "#3498db"
+                    elif ema9 > ema21:
+                        if vol > (vol_ma10 * 1.15) and 50 <= rsi <= 78:
+                            section_label = "⚡ ثالثاً: أسهم المضاربة اللحظية واليومية"
+                            section_color = "#e67e22"
+                        else:
+                            section_label = "📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر"
+                            section_color = "#2ecc71"
+                    else:
+                        section_label = None
+
+                    if section_label:
+                        st.markdown(
+                            f'<div style="background-color:{section_color}; padding:14px; '
+                            f'border-radius:8px; text-align:center; margin-bottom:16px;">'
+                            f'<span style="color:white; font-size:16px;">📍 لو عملت مسح شامل دلوقتي، '
+                            f'السهم ده هيظهر في قسم: <b>{section_label}</b></span></div>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.caption(
+                            "📍 السهم ده حالياً **مش هيظهر في أي قسم من الأربعة** لو عملت مسح شامل "
+                            "(المؤشرات الحالية مش مطابقة لشروط أي قسم)."
+                        )
+
                     # سعر بيع مستهدف (تقني) = النطاق العلوي لبولينجر باندز - لو
                     # السعر فوقه فعلاً، السهم متشبع شرائياً ومفيش هامش صعود واضح
                     if upper > price:
@@ -1665,6 +1699,19 @@ with tab2:
             default=[],
         )
 
+    CATEGORY_OPTIONS = {
+        "fresh": "🚀 أولاً: تأسيس مركز جديدة (قاع صاعد طازة)",
+        "bottom": "📥 ثانياً: رادار تصيد القيعان",
+        "short_term": "⚡ ثالثاً: مضاربة لحظية ويومية",
+        "long_term": "📈 رابعاً: استثمار واتجاه صاعد مستقر",
+    }
+    selected_categories_scan = st.multiselect(
+        "🗂️ عايز تشوف أي الأقسام بس؟ (سيبها فاضية أو اختار الكل لعرض الأربعة زي المعتاد)",
+        options=list(CATEGORY_OPTIONS.keys()),
+        format_func=lambda k: CATEGORY_OPTIONS[k],
+        default=list(CATEGORY_OPTIONS.keys()),
+    )
+
     if st.button("تشغيل الفرز والترتيب الاحترافي اللحظي 🚀"):
         fresh_cross_results = []
         bottom_accumulation_results = []
@@ -1819,19 +1866,23 @@ with tab2:
                     
                     if is_new_cross and r < 52:
                         data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد طازة)"
-                        fresh_cross_results.append(data_entry)
-                    
+                        if "fresh" in selected_categories_scan:
+                            fresh_cross_results.append(data_entry)
+
                     elif r < 35 and m < 35:
                         data_entry["التقييم الفني"] = "🛒 قاع تجميع (فرصة مراقبة صامتة)"
-                        bottom_accumulation_results.append(data_entry)
-                    
+                        if "bottom" in selected_categories_scan:
+                            bottom_accumulation_results.append(data_entry)
+
                     elif e9 > e21:
                         if vol_today > (vol_ma10 * 1.15) and 50 <= r <= 78:
                             data_entry["التقييم الفني"] = f"{status} [مضاربة لحظية]"
-                            short_term_trading.append(data_entry)
+                            if "short_term" in selected_categories_scan:
+                                short_term_trading.append(data_entry)
                         else:
                             data_entry["التقييم الفني"] = f"{status} [استثمار مستقر]"
-                            long_term_investment.append(data_entry)
+                            if "long_term" in selected_categories_scan:
+                                long_term_investment.append(data_entry)
                 except Exception as e:
                     skipped_count += 1
                     skipped_names.append((name, ticker, f"خطأ أثناء التحليل: {e}"))
@@ -1881,40 +1932,41 @@ with tab2:
                     st.sidebar.error(tg_status_msg)
             
             # عرض الجداول على الشاشة
-            st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
-            if fresh_cross_results:
-                st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False), use_container_width=True)
-            else:
-                st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم واستوفت شروط الفوليوم الحقيقي.")
-                
-            st.write("---")
-            
-            st.markdown("### 📥 ثانياً: رادار تصيد القيعان (أسهم رخيصة جداً في مناطق تجميع الحيتان 🐋)")
-            if bottom_accumulation_results:
-                st.dataframe(pd.DataFrame(bottom_accumulation_results).sort_values(by="مؤشر الزخم RSI", ascending=True), use_container_width=True)
-            else:
-                st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد تحت 35 تنطبق عليها شروط الفوليوم الأمان.")
-                
-            st.write("---")
-            
-            st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية (سيولة ضخمة وعزم سريع محمي من التضخم)")
-            if short_term_trading:
-                st.dataframe(pd.DataFrame(short_term_trading).sort_values(by="فوليوم اليوم", ascending=False), use_container_width=True)
-            else:
-                st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة والآمنة حالياً.")
+            if "fresh" in selected_categories_scan:
+                st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
+                if fresh_cross_results:
+                    st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم واستوفت شروط الفوليوم الحقيقي.")
+                st.write("---")
 
-            st.write("---")
-            
-            st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر (طويل الأجل وآمن)")
-            if long_term_investment:
-                lt_df = pd.DataFrame(long_term_investment)
-                sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة (من 100)"
-                st.dataframe(lt_df.sort_values(by=sort_col, ascending=False), use_container_width=True)
-                if include_fundamentals_scan:
-                    st.caption(
-                        "💡 مرتبة حسب 'الدرجة الشاملة' = 60% فني + 40% مالي. "
-                        "لو عمود مكرر الربحية P/E فاضي لسهم معين، يبقى Yahoo مارجعش بيانات مالية له."
-                    )
+            if "bottom" in selected_categories_scan:
+                st.markdown("### 📥 ثانياً: رادار تصيد القيعان (أسهم رخيصة جداً في مناطق تجميع الحيتان 🐋)")
+                if bottom_accumulation_results:
+                    st.dataframe(pd.DataFrame(bottom_accumulation_results).sort_values(by="مؤشر الزخم RSI", ascending=True), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد تحت 35 تنطبق عليها شروط الفوليوم الأمان.")
+                st.write("---")
+
+            if "short_term" in selected_categories_scan:
+                st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية (سيولة ضخمة وعزم سريع محمي من التضخم)")
+                if short_term_trading:
+                    st.dataframe(pd.DataFrame(short_term_trading).sort_values(by="فوليوم اليوم", ascending=False), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة والآمنة حالياً.")
+                st.write("---")
+
+            if "long_term" in selected_categories_scan:
+                st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر (طويل الأجل وآمن)")
+                if long_term_investment:
+                    lt_df = pd.DataFrame(long_term_investment)
+                    sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة (من 100)"
+                    st.dataframe(lt_df.sort_values(by=sort_col, ascending=False), use_container_width=True)
+                    if include_fundamentals_scan:
+                        st.caption(
+                            "💡 مرتبة حسب 'الدرجة الشاملة' = 60% فني + 40% مالي. "
+                            "لو عمود مكرر الربحية P/E فاضي لسهم معين، يبقى Yahoo مارجعش بيانات مالية له."
+                        )
 
             # --- الملخص الشامل: التوصية النهائية (فني + مالي مع بعض) عبر كل الفئات ---
             st.markdown("---")
