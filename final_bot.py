@@ -1408,6 +1408,15 @@ def calculate_indicators(df):
             streak.iloc[idx] = 0
     df['Consecutive_Up_Days'] = streak
 
+    # --- Accumulation/Distribution Line (تجميع/تصريف) ---
+    # Money Flow Multiplier: بيقيس فين قفل السهم داخل مدى اليوم (High-Low)
+    high_low_range = (df['High'] - df['Low']).replace(0, 0.0001)
+    money_flow_multiplier = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / high_low_range
+    money_flow_volume = money_flow_multiplier * df['Volume']
+    df['AD_Line'] = money_flow_volume.cumsum()
+    # ميل خط A/D خلال آخر 10 أيام - بيوضح هل في تجميع هادي (يصعد) أو تصريف (يهبط)
+    df['AD_Line_Slope_10d'] = df['AD_Line'].diff(10)
+
     return df
 
 
@@ -1444,6 +1453,236 @@ def find_support_resistance(df, order: int = 5, max_lookback: int = 150):
     nearest_resistance = min(resistances_above) if resistances_above else None
     nearest_support = max(supports_below) if supports_below else None
     return nearest_support, nearest_resistance
+
+
+# ---------------------------------------------------------------------------
+# Eagle Score - نظام النقاط الموحّد (100 نقطة) - قسم 9 من خطة V2
+# ---------------------------------------------------------------------------
+EAGLE_WEIGHTS = {
+    "trend": 15, "momentum": 10, "volume_rvol": 10, "liquidity": 8,
+    "price_structure": 10, "breakout": 8, "relative_strength": 8,
+    "sector_strength": 4, "accumulation_distribution": 5, "risk_reward": 10,
+    "fundamentals": 2, "market_depth": 10,
+}  # المجموع = 100
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_egx30_change_20d():
+    """
+    بيجيب نسبة تغيّر مؤشر EGX30 خلال آخر 20 يوم تداول - أساس حساب
+    Relative Strength (قوة السهم النسبية مقابل السوق ككل).
+    يرجع None لو فشل الجلب (بدل ما يوقف حساب باقي الأداة).
+    """
+    try:
+        idx_df = fetch_egx_history_tv("EGX30.CA", n_bars=40)  # بنستخدم نفس دالة TradingView، الرمز نفسه EGX30
+        if idx_df is None or idx_df.empty or len(idx_df) < 21:
+            return None
+        change_pct = (idx_df['Close'].iloc[-1] / idx_df['Close'].iloc[-21] - 1) * 100
+        return float(change_pct)
+    except Exception:
+        return None
+
+
+def _score_trend(e9, e21, adx_val, p, ema200_ok=None):
+    """Trend (15 نقطة): تقاطع EMA9/21 + قوة الاتجاه ADX."""
+    score = 0.0
+    if e9 > e21:
+        score += 8
+    strength_bonus = min(adx_val / 40, 1.0) * 7  # ADX=40+ يدي أقصى بونص
+    score += strength_bonus
+    return round(min(score, 15), 1)
+
+
+def _score_momentum(r, m, u, l, p):
+    """Momentum (10 نقاط): نفس منطق momentum_score القديم بس مُعاد توزينه لـ10."""
+    score = 0.0
+    if 50 <= m <= 70: score += 3.5
+    elif 35 <= m < 50: score += 1.5
+    elif m > 85: score -= 3
+    if 45 <= r <= 65: score += 3.5
+    elif r > 78: score -= 4
+    if u > l:
+        score += ((u - p) / (u - l)) * 3
+    return round(max(min(score, 10), -10), 1)
+
+
+def _score_volume_rvol(rvol, price_up_today):
+    """Volume/RVOL (10 نقاط): حجم نسبي مربوط باتجاه السعر."""
+    if rvol >= 2.0:
+        return 10.0 if price_up_today else -5.0
+    if rvol >= 1.5:
+        return 7.0 if price_up_today else -3.0
+    if rvol >= 1.0:
+        return 4.0 if price_up_today else 1.0
+    return 1.0
+
+
+def _score_liquidity(avg_trade_value):
+    """Liquidity (8 نقاط): حسب متوسط قيمة التداول اليومي التقريبي."""
+    if avg_trade_value >= 20_000_000: return 8.0
+    if avg_trade_value >= 5_000_000: return 6.0
+    if avg_trade_value >= 1_000_000: return 4.0
+    if avg_trade_value >= 300_000: return 2.0
+    return 0.0
+
+
+def _score_price_structure(p, nearest_support, nearest_resistance, dist_low_52w, dist_high_52w):
+    """Price Structure (10 نقاط): موقع السعر بين الدعم والمقاومة + موقعه من مدى 52 أسبوع."""
+    score = 0.0
+    if nearest_support is not None and nearest_resistance is not None and nearest_resistance > nearest_support:
+        position_in_range = (p - nearest_support) / (nearest_resistance - nearest_support)
+        # وسط النطاق (مش ملتصق بمقاومة ولا دعم) بيدي أعلى نقاط - مساحة تحرك في الاتجاهين
+        score += 6 * (1 - abs(position_in_range - 0.5) * 2) if 0 <= position_in_range <= 1 else 2
+    else:
+        score += 3  # مفيش هيكل واضح - نقاط محايدة
+    # قريب من قاع 52 أسبوع بمعقولية = فرصة، بعيد جداً عن القمة يعني مساحة صعود
+    if dist_high_52w <= -15:
+        score += 4  # مساحة صعود لسه موجودة
+    elif dist_high_52w >= -3:
+        score += 1  # قريب من القمة، مساحة صعود محدودة
+    else:
+        score += 2.5
+    return round(min(score, 10), 1)
+
+
+def _score_breakout(p, nearest_resistance, rvol, price_up_today):
+    """Breakout (8 نقاط): اختراق مقاومة قريبة بحجم مؤيد."""
+    if nearest_resistance is None:
+        return 2.0
+    dist_to_resistance_pct = (nearest_resistance - p) / p * 100
+    if p > nearest_resistance and rvol >= 1.5 and price_up_today:
+        return 8.0  # اختراق فعلي بحجم قوي
+    if p > nearest_resistance:
+        return 5.0  # اختراق بس بدون تأكيد حجم قوي
+    if 0 < dist_to_resistance_pct <= 3:
+        return 3.0  # قريب جداً من الاختراق
+    return 1.0
+
+
+def _score_relative_strength(stock_change_20d, egx30_change_20d):
+    """Relative Strength (8 نقاط): أداء السهم مقابل مؤشر EGX30 خلال 20 يوم."""
+    if stock_change_20d is None or egx30_change_20d is None:
+        return None  # مش N/A بصفر - علشان مايتحسبش ضد السهم بالغلط
+    relative_pct = stock_change_20d - egx30_change_20d
+    if relative_pct >= 15: return 8.0
+    if relative_pct >= 5: return 6.0
+    if relative_pct >= 0: return 4.0
+    if relative_pct >= -10: return 2.0
+    return 0.0
+
+
+def _score_sector_strength(sector_avg_change, overall_avg_change):
+    """Sector Strength (4 نقاط): متوسط أداء قطاع السهم مقابل متوسط أداء كل الأسهم الممسوحة."""
+    if sector_avg_change is None or overall_avg_change is None:
+        return None
+    relative_pct = sector_avg_change - overall_avg_change
+    if relative_pct >= 5: return 4.0
+    if relative_pct >= 0: return 2.5
+    if relative_pct >= -5: return 1.0
+    return 0.0
+
+
+def _score_accumulation_distribution(ad_slope_10d, vol_ma10):
+    """Accumulation/Distribution (5 نقاط): ميل خط A/D خلال آخر 10 أيام."""
+    if ad_slope_10d is None or vol_ma10 in (None, 0):
+        return 2.5  # محايد لو مفيش بيانات كافية
+    # تطبيع الميل بالنسبة لحجم التداول عشان يبقى قابل للمقارنة بين الأسهم
+    normalized_slope = ad_slope_10d / (vol_ma10 * 10)
+    if normalized_slope > 0.3: return 5.0
+    if normalized_slope > 0.1: return 3.5
+    if normalized_slope > -0.1: return 2.5
+    if normalized_slope > -0.3: return 1.0
+    return 0.0
+
+
+def _score_risk_reward(rr_ratio):
+    """Risk/Reward (10 نقاط)."""
+    if rr_ratio is None:
+        return 2.0  # محايد منخفض - مفيش هدف/وقف واضح يتحسب عليهم
+    if rr_ratio >= 3: return 10.0
+    if rr_ratio >= 2: return 8.0
+    if rr_ratio >= 1.5: return 6.0
+    if rr_ratio >= 1: return 4.0
+    return 1.0
+
+
+def _score_fundamentals(fund_score):
+    """Fundamentals (2 نقطة بس - وزن صغير مقصود لأن الأداة أساسها فني)."""
+    if fund_score is None:
+        return None
+    return round((fund_score / 100) * 2, 2)
+
+
+def _score_market_depth(depth_metrics):
+    """Market Depth (10 نقاط) - لو متاحة وسليمة بس، وإلا None (مش صفر)."""
+    if not depth_metrics:
+        return None
+    imb = depth_metrics.get("imbalance_%")
+    spread = depth_metrics.get("spread_%")
+    if imb is None:
+        return None
+    score = 5.0 + (imb / 100) * 5.0  # من صفر لـ10 حسب عدم التوازن (-100%..+100%)
+    score = max(min(score, 10.0), 0.0)
+    if spread is not None and spread > 1.0:  # Spread عالي = سيولة لحظية ضعيفة، بيقلل الثقة
+        score *= 0.7
+    return round(score, 1)
+
+
+def compute_eagle_score(components: dict):
+    """
+    بيجمع كل المكونات مع بعض. أي مكوّن قيمته None (زي Market Depth لو مش
+    متاح، أو Relative Strength لو فشل EGX30) **بيتشال من الحساب تماماً
+    وبيتشال وزنه من المجموع الكلي**، فالنتيجة النهائية بتفضل من 100 لكل
+    الأسهم المتاحة ليها نفس عدد المكونات - مفيش سهم بيتظلم لمجرد إن مصدر
+    بيانات اختياري (زي Market Depth) مش شغال له.
+    """
+    total_score = 0.0
+    total_possible = 0.0
+    available_components = {}
+    for key, weight in EAGLE_WEIGHTS.items():
+        value = components.get(key)
+        if value is None:
+            continue
+        total_score += value
+        total_possible += weight
+        available_components[key] = value
+
+    if total_possible <= 0:
+        return {"eagle_score": None, "components": available_components, "components_used": 0}
+
+    eagle_score_100 = round((total_score / total_possible) * 100, 1)
+    return {
+        "eagle_score": eagle_score_100,
+        "components": available_components,
+        "components_used": len(available_components),
+        "components_total": len(EAGLE_WEIGHTS),
+    }
+
+
+def determine_entry_quality(eagle_score, dist_to_resistance_pct, rr_ratio, depth_metrics, spread_threshold=1.0):
+    """
+    Entry Quality (قسم 10 من الخطة): BUY NOW / BUY ON PULLBACK /
+    WAIT FOR BREAKOUT / AVOID.
+    """
+    depth_confirms = depth_metrics is not None and (depth_metrics.get("imbalance_%") or 0) > 10
+    spread_ok = depth_metrics is None or (depth_metrics.get("spread_%") or 0) <= spread_threshold
+
+    if eagle_score is None:
+        return "⚪ غير محدد (بيانات غير كافية)"
+    if not spread_ok:
+        return "🔴 AVOID (Spread مرتفع - سيولة لحظية ضعيفة)"
+    if rr_ratio is not None and rr_ratio < 1:
+        return "🔴 AVOID (Risk/Reward ضعيف)"
+    if eagle_score >= 65 and dist_to_resistance_pct is not None and dist_to_resistance_pct > 5:
+        if depth_confirms or depth_metrics is None:
+            return "🟢 BUY NOW (قوة عالية + مفيش مقاومة قريبة)"
+    if eagle_score >= 65 and dist_to_resistance_pct is not None and 0 < dist_to_resistance_pct <= 5:
+        return "🟡 WAIT FOR BREAKOUT (قريب من مقاومة، محتاج اختراق مؤكد)"
+    if eagle_score >= 55:
+        return "🟡 BUY ON PULLBACK (السهم قوي بس السعر ممتد، استنى رجوع لدعم)"
+    if eagle_score < 40:
+        return "🔴 AVOID (قوة إجمالية ضعيفة)"
+    return "⚪ WAIT (مفيش إشارة واضحة كفاية)"
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -2171,7 +2410,10 @@ with tab2:
         bottom_accumulation_results = []
         short_term_trading = []
         long_term_investment = []
-        
+        eagle_raw = {}  # ticker -> ingredients لازمة لحساب Relative/Sector Strength بعد ما المسح يخلص
+
+        egx30_change_20d = fetch_egx30_change_20d()
+
         progress_bar = st.progress(0)
         total_stocks = len(scan_stocks)
         
@@ -2322,6 +2564,37 @@ with tab2:
                     if min_rr_scan > 0 and (rr_ratio is None or rr_ratio < min_rr_scan):
                         continue
 
+                    # --- مكوّنات Eagle Score (اللي ممكن تتحسب دلوقتي من غير الحاجة لبيانات
+                    # أسهم تانية - Relative/Sector Strength بيتحسبوا بعد ما المسح يخلص) ---
+                    ad_slope_10d = float(row['AD_Line_Slope_10d']) if pd.notna(row.get('AD_Line_Slope_10d', np.nan)) else None
+                    price_change_20d = None
+                    if len(stock_df) >= 21:
+                        base_price_20d = float(stock_df['Close'].iloc[-21])
+                        if base_price_20d > 0:
+                            price_change_20d = (p / base_price_20d - 1) * 100
+
+                    dist_to_resistance_pct = ((nearest_resistance - p) / p * 100) if nearest_resistance else None
+
+                    depth_metrics_for_score = None
+                    if ticker.endswith(".CA") and get_egxapi_key():
+                        depth_metrics_for_score, _ = get_market_depth(ticker[:-3])
+
+                    eagle_components = {
+                        "trend": _score_trend(e9, e21, adx_val, p),
+                        "momentum": _score_momentum(r, m, u, l, p),
+                        "volume_rvol": _score_volume_rvol(rvol, price_up_today),
+                        "liquidity": _score_liquidity(avg_trade_value),
+                        "price_structure": _score_price_structure(p, nearest_support, nearest_resistance, dist_low_52w, dist_high_52w),
+                        "breakout": _score_breakout(p, nearest_resistance, rvol, price_up_today),
+                        "accumulation_distribution": _score_accumulation_distribution(ad_slope_10d, vol_ma10),
+                        "risk_reward": _score_risk_reward(rr_ratio),
+                        "market_depth": _score_market_depth(depth_metrics_for_score),
+                        # دول محتاجين بيانات كل الأسهم اللي اتمسحت - بيتحسبوا بعد الحلقة
+                        "relative_strength": None,
+                        "sector_strength": None,
+                        "fundamentals": None,  # بيتحط لو include_fundamentals_scan شغال (تحت)
+                    }
+
                     data_entry = {
                         "النقاط الفنية والسيولة (من 100)": round(momentum_score, 1),
                         "اسم الشركة": name,
@@ -2376,6 +2649,7 @@ with tab2:
                         data_entry["رقم جراهام"] = graham["graham_number"]
                         data_entry["فرق جراهام %"] = graham["graham_upside_%"]
                         data_entry["تحت السعر العادل؟"] = graham["undervalued_per_graham"]
+                        eagle_components["fundamentals"] = _score_fundamentals(fund_score)
 
                     verdict = compute_verdict(
                         momentum_score, fund_score_for_verdict,
@@ -2383,7 +2657,19 @@ with tab2:
                         fundamentals_fetched=fundamentals_fetched,
                     )
                     data_entry.update(verdict)
-                    
+
+                    # بنسجّل كل حاجة لازمة لحساب Relative/Sector Strength بعد ما
+                    # المسح كله يخلص (لسه ناقصين متوسط السوق ومتوسط القطاع)
+                    eagle_raw[ticker] = {
+                        "data_entry": data_entry,
+                        "components": eagle_components,
+                        "sector": sector,
+                        "price_change_20d": price_change_20d,
+                        "dist_to_resistance_pct": dist_to_resistance_pct,
+                        "rr_ratio": rr_ratio,
+                        "depth_metrics": depth_metrics_for_score,
+                    }
+
                     if is_new_cross and r < 52:
                         data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد طازة)"
                         if "fresh" in selected_categories_scan:
@@ -2407,7 +2693,37 @@ with tab2:
                     skipped_count += 1
                     skipped_names.append((name, ticker, f"خطأ أثناء التحليل: {e}"))
                     continue
-            
+
+            # --- استكمال Eagle Score: Relative Strength + Sector Strength ---
+            # دول محتاجين بيانات كل الأسهم اللي اتمسحت مع بعض، فبيتحسبوا هنا
+            # بعد ما الحلقة خلصت خالص، وبعدين بنحدّث كل data_entry في مكانها
+            if eagle_raw:
+                sector_changes = {}
+                all_changes = []
+                for info in eagle_raw.values():
+                    if info["price_change_20d"] is not None:
+                        sector_changes.setdefault(info["sector"], []).append(info["price_change_20d"])
+                        all_changes.append(info["price_change_20d"])
+                overall_avg_change = (sum(all_changes) / len(all_changes)) if all_changes else None
+                sector_avg_change = {
+                    sec: (sum(vals) / len(vals)) for sec, vals in sector_changes.items()
+                }
+
+                for ticker, info in eagle_raw.items():
+                    comps = info["components"]
+                    comps["relative_strength"] = _score_relative_strength(info["price_change_20d"], egx30_change_20d)
+                    comps["sector_strength"] = _score_sector_strength(
+                        sector_avg_change.get(info["sector"]), overall_avg_change
+                    )
+                    eagle_result = compute_eagle_score(comps)
+                    entry_quality = determine_entry_quality(
+                        eagle_result["eagle_score"], info["dist_to_resistance_pct"],
+                        info["rr_ratio"], info["depth_metrics"],
+                    )
+                    info["data_entry"]["🦅 Eagle Score (100)"] = eagle_result["eagle_score"]
+                    info["data_entry"]["مكوّنات متاحة"] = f"{eagle_result['components_used']}/{eagle_result['components_total']}"
+                    info["data_entry"]["Entry Quality"] = entry_quality
+
             if skipped_count:
                 st.info(f"ℹ️ تم تخطي {skipped_count} سهم أثناء التحليل (بيانات ناقصة أو تعذر حساب المؤشرات).")
                 with st.expander(f"📋 عرض تفاصيل الـ {skipped_count} سهم اللي اتخطاها"):
@@ -2452,10 +2768,14 @@ with tab2:
                     st.sidebar.error(tg_status_msg)
             
             # عرض الجداول على الشاشة
+            EAGLE_COL = "🦅 Eagle Score (100)"
+
             if "fresh" in selected_categories_scan:
                 st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
                 if fresh_cross_results:
-                    st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False), use_container_width=True)
+                    _df = pd.DataFrame(fresh_cross_results)
+                    _sort = EAGLE_COL if EAGLE_COL in _df.columns else "النقاط الفنية والسيولة (من 100)"
+                    st.dataframe(_df.sort_values(by=_sort, ascending=False), use_container_width=True)
                 else:
                     st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم واستوفت شروط الفوليوم الحقيقي.")
                 st.write("---")
@@ -2463,7 +2783,10 @@ with tab2:
             if "bottom" in selected_categories_scan:
                 st.markdown("### 📥 ثانياً: رادار تصيد القيعان (أسهم رخيصة جداً في مناطق تجميع الحيتان 🐋)")
                 if bottom_accumulation_results:
-                    st.dataframe(pd.DataFrame(bottom_accumulation_results).sort_values(by="مؤشر الزخم RSI", ascending=True), use_container_width=True)
+                    _df = pd.DataFrame(bottom_accumulation_results)
+                    _sort = EAGLE_COL if EAGLE_COL in _df.columns else "مؤشر الزخم RSI"
+                    _asc = False if _sort == EAGLE_COL else True
+                    st.dataframe(_df.sort_values(by=_sort, ascending=_asc), use_container_width=True)
                 else:
                     st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد تحت 35 تنطبق عليها شروط الفوليوم الأمان.")
                 st.write("---")
@@ -2471,7 +2794,9 @@ with tab2:
             if "short_term" in selected_categories_scan:
                 st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية (سيولة ضخمة وعزم سريع محمي من التضخم)")
                 if short_term_trading:
-                    st.dataframe(pd.DataFrame(short_term_trading).sort_values(by="فوليوم اليوم", ascending=False), use_container_width=True)
+                    _df = pd.DataFrame(short_term_trading)
+                    _sort = EAGLE_COL if EAGLE_COL in _df.columns else "فوليوم اليوم"
+                    st.dataframe(_df.sort_values(by=_sort, ascending=False), use_container_width=True)
                 else:
                     st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة والآمنة حالياً.")
                 st.write("---")
@@ -2480,7 +2805,10 @@ with tab2:
                 st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر (طويل الأجل وآمن)")
                 if long_term_investment:
                     lt_df = pd.DataFrame(long_term_investment)
-                    sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة (من 100)"
+                    if EAGLE_COL in lt_df.columns:
+                        sort_col = EAGLE_COL
+                    else:
+                        sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة (من 100)"
                     st.dataframe(lt_df.sort_values(by=sort_col, ascending=False), use_container_width=True)
                     if include_fundamentals_scan:
                         st.caption(
