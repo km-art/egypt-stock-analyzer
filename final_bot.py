@@ -1483,6 +1483,127 @@ def fetch_egx30_change_20d():
         return None
 
 
+# ---------------------------------------------------------------------------
+# Global Market Engine + Gold/Silver Ratio - V3 (قسم 4 و7-14)
+# ---------------------------------------------------------------------------
+GLOBAL_ASSETS = {
+    "fx": {
+        "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X",
+        "USD/CHF": "USDCHF=X", "USD/CNY": "USDCNY=X", "USD/TRY": "USDTRY=X",
+        "USD/BRL": "USDBRL=X", "USD/EGP": "USDEGP=X",
+    },
+    "crypto": {
+        "Bitcoin (BTC)": "BTC-USD", "Ethereum (ETH)": "ETH-USD",
+        "Solana (SOL)": "SOL-USD", "BNB": "BNB-USD", "XRP": "XRP-USD",
+    },
+    "metals": {
+        "الذهب (Gold)": "GC=F", "الفضة (Silver)": "SI=F",
+        "البلاتين (Platinum)": "PL=F", "البلاديوم (Palladium)": "PA=F",
+        "النحاس (Copper)": "HG=F",
+    },
+    "energy": {
+        "خام WTI": "CL=F", "خام برنت (Brent)": "BZ=F", "الغاز الطبيعي": "NG=F",
+    },
+}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_global_asset_snapshot(yahoo_ticker: str):
+    """
+    يجيب سعر لحظي (آخر إغلاق متاح) + نسب التغيّر (يومي/أسبوعي/شهري) لأصل
+    عالمي عن طريق yfinance (نفس الجلسة المضادة للحظر المستخدمة لأمريكا
+    والإمارات). يرجع None لو فشل الجلب - بهدوء من غير ما يوقف باقي التطبيق.
+    """
+    try:
+        df = yf.download(yahoo_ticker, period="35d", progress=False, session=YF_SESSION)
+        if df is None or df.empty or len(df) < 2:
+            return None
+        close = df['Close'].squeeze() if hasattr(df['Close'], 'squeeze') else df['Close']
+        last_price = float(close.iloc[-1])
+        change_1d = ((last_price / float(close.iloc[-2])) - 1) * 100 if len(close) >= 2 else None
+        change_1w = ((last_price / float(close.iloc[-6])) - 1) * 100 if len(close) >= 6 else None
+        change_1m = ((last_price / float(close.iloc[0])) - 1) * 100 if len(close) >= 20 else None
+        return {"price": last_price, "change_1d_%": change_1d, "change_1w_%": change_1w, "change_1m_%": change_1m}
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_gold_silver_history(period_days: int = 730):
+    """
+    يجيب تاريخ أسعار الذهب والفضة (سنتين تقريباً) لحساب GSR التاريخية
+    والـPercentiles - نفس المصدر (yfinance) ونفس الوحدة (USD/أونصة) للاتنين
+    زي ما الخطة أكدت (قسم 20: لازم نفس العملة ووحدة الوزن).
+    """
+    try:
+        gold = yf.download("GC=F", period=f"{period_days}d", progress=False, session=YF_SESSION)
+        silver = yf.download("SI=F", period=f"{period_days}d", progress=False, session=YF_SESSION)
+        if gold is None or gold.empty or silver is None or silver.empty:
+            return None
+        gold_close = gold['Close'].squeeze() if hasattr(gold['Close'], 'squeeze') else gold['Close']
+        silver_close = silver['Close'].squeeze() if hasattr(silver['Close'], 'squeeze') else silver['Close']
+        combined = pd.DataFrame({"gold": gold_close, "silver": silver_close}).dropna()
+        if combined.empty:
+            return None
+        combined["gsr"] = combined["gold"] / combined["silver"]
+        return combined
+    except Exception:
+        return None
+
+
+def compute_gsr(gold_price: float, silver_price: float):
+    """GSR = سعر أونصة الذهب ÷ سعر أونصة الفضة - بشرط نفس العملة ونفس وحدة الوزن (قسم 7)."""
+    if not gold_price or not silver_price or silver_price <= 0:
+        return None
+    return gold_price / silver_price
+
+
+def implied_silver_price(gold_price: float, reference_gsr: float):
+    """Implied Silver = Gold Price ÷ Reference GSR (قسم 9)."""
+    if not gold_price or not reference_gsr or reference_gsr <= 0:
+        return None
+    return gold_price / reference_gsr
+
+
+def fair_value_gap_pct(implied_price: float, actual_price: float):
+    """Fair Value Gap % = (Implied - Actual) ÷ Actual × 100 (قسم 10)."""
+    if not implied_price or not actual_price or actual_price <= 0:
+        return None
+    return ((implied_price - actual_price) / actual_price) * 100
+
+
+def compute_gsr_percentiles(gsr_history: pd.Series):
+    """Median، متوسط 1 سنة، وPercentiles (P10/25/50/75/90) للـGSR التاريخية (قسم 12)."""
+    if gsr_history is None or gsr_history.empty:
+        return None
+    return {
+        "median": float(gsr_history.median()),
+        "mean_1y": float(gsr_history.tail(252).mean()) if len(gsr_history) >= 30 else float(gsr_history.mean()),
+        "p10": float(gsr_history.quantile(0.10)),
+        "p25": float(gsr_history.quantile(0.25)),
+        "p50": float(gsr_history.quantile(0.50)),
+        "p75": float(gsr_history.quantile(0.75)),
+        "p90": float(gsr_history.quantile(0.90)),
+    }
+
+
+def determine_gsr_alert(current_gsr: float, percentiles: dict, silver_momentum_up: bool = None):
+    """
+    تنبيهات الفضة (قسم 14): SILVER RELATIVE CHEAP / WATCH / EXPENSIVE.
+    ملحوظة مهمة (زي ما الخطة أكدت): دي مؤشرات نسبية للسياق، مش توصية شراء
+    آلية - الأداة بتعرضها كمعلومة، القرار للمستخدم.
+    """
+    if current_gsr is None or percentiles is None:
+        return "⚪ غير محدد (بيانات غير كافية)"
+    if current_gsr >= percentiles["p75"]:
+        if silver_momentum_up:
+            return "🟡 WATCH (GSR مرتفع، بس زخم الفضة لسه صاعد - مفيش شراء آلي)"
+        return "🟢 SILVER RELATIVE CHEAP (GSR أعلى بكثير من التاريخي - الفضة رخيصة نسبياً للذهب)"
+    if current_gsr <= percentiles["p25"]:
+        return "🔴 SILVER RELATIVE EXPENSIVE (GSR منخفض جداً مقارنة بتاريخه)"
+    return "⚪ ضمن النطاق التاريخي المعتاد (مفيش تنبيه)"
+
+
 def _score_trend(e9, e21, adx_val, p, ema200_ok=None):
     """Trend (15 نقطة): تقاطع EMA9/21 + قوة الاتجاه ADX."""
     score = 0.0
@@ -1996,8 +2117,9 @@ with st.sidebar.expander(f"⭐ المفضّلة ({len(watchlist)} سهم)"):
                 st.rerun()
     st.caption("💡 لاستخدام المفضّلة في المسح الشامل، انسخ الرموز فوق والصقها في قائمة الأسهم بتاب المسح.")
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "🔍 فحص سهم تفصيلي + رسم بياني", "🏆 مسح وترتيب السوق الاحترافي", "💼 محفظتي",
+    "🌍 الأسواق العالمية + الذهب/الفضة",
 ])
 
 with tab1:
@@ -2937,3 +3059,103 @@ with tab3:
         total_value_rows = [r["الربح/الخسارة (قيمة)"] for r in rows if r["الربح/الخسارة (قيمة)"] is not None]
         if total_value_rows:
             st.metric("إجمالي الربح/الخسارة (للأسهم اللي معاها كمية)", f"{sum(total_value_rows):,.2f}")
+
+
+with tab4:
+    st.subheader("🌍 الأسواق العالمية + محرك الذهب/الفضة")
+    st.caption(
+        "لوحة معلوماتية مستقلة تماماً عن تحليل الأسهم - بتراقب الفوركس والكريبتو والمعادن "
+        "والطاقة، ومحرك مخصص لنسبة الذهب للفضة (GSR). مفيش أي ربط بينها وبين توصيات الأسهم حالياً."
+    )
+
+    gsr_tab, global_tab = st.tabs(["🥇 الذهب والفضة (GSR)", "💱 فوركس + كريبتو + طاقة"])
+
+    with gsr_tab:
+        st.markdown("##### 📊 نسبة الذهب للفضة (Gold-to-Silver Ratio)")
+        st.caption(
+            "GSR = سعر أونصة الذهب ÷ سعر أونصة الفضة (بنفس العملة ووحدة الوزن - USD/أونصة للاتنين). "
+            "رقم مرتفع يعني تفوق الذهب نسبياً، رقم منخفض يعني تفوق الفضة نسبياً."
+        )
+
+        gold_snap = fetch_global_asset_snapshot("GC=F")
+        silver_snap = fetch_global_asset_snapshot("SI=F")
+
+        if not gold_snap or not silver_snap:
+            st.warning("⚪ تعذر جلب أسعار الذهب أو الفضة الحالية دلوقتي - جرب تاني بعد شوية.")
+        else:
+            current_gsr = compute_gsr(gold_snap["price"], silver_snap["price"])
+
+            gc1, gc2, gc3 = st.columns(3)
+            gc1.metric("🥇 الذهب (USD/أونصة)", f"${gold_snap['price']:,.2f}",
+                       f"{gold_snap['change_1d_%']:+.2f}%" if gold_snap['change_1d_%'] is not None else None)
+            gc2.metric("🥈 الفضة (USD/أونصة)", f"${silver_snap['price']:,.2f}",
+                       f"{silver_snap['change_1d_%']:+.2f}%" if silver_snap['change_1d_%'] is not None else None)
+            gc3.metric("GSR الحالية", f"{current_gsr:.1f} : 1" if current_gsr else "-")
+
+            # --- التاريخي والـPercentiles (قسم 12: Dynamic Fair Value بدل رقم ثابت) ---
+            gsr_history_df = fetch_gold_silver_history()
+            percentiles = compute_gsr_percentiles(gsr_history_df["gsr"]) if gsr_history_df is not None else None
+
+            if percentiles:
+                st.markdown("##### 📈 GSR التاريخية (آخر سنتين تقريباً)")
+                pc1, pc2, pc3, pc4, pc5 = st.columns(5)
+                pc1.metric("P10", f"{percentiles['p10']:.1f}")
+                pc2.metric("P25", f"{percentiles['p25']:.1f}")
+                pc3.metric("Median (P50)", f"{percentiles['p50']:.1f}")
+                pc4.metric("P75", f"{percentiles['p75']:.1f}")
+                pc5.metric("P90", f"{percentiles['p90']:.1f}")
+                st.caption(f"متوسط آخر سنة: {percentiles['mean_1y']:.1f}")
+
+                silver_momentum_up = (silver_snap.get('change_1w_%') or 0) > 0
+                alert = determine_gsr_alert(current_gsr, percentiles, silver_momentum_up)
+                st.info(f"**الحالة الحالية:** {alert}")
+                st.caption(
+                    "⚠️ ده مؤشر سياق نسبي بس (الفضة مقابل الذهب تاريخياً) - مش توصية شراء أو بيع آلية، "
+                    "والاتجاه العام ممكن يستمر حتى لو GSR في منطقة متطرفة تاريخياً."
+                )
+            else:
+                st.caption("⚪ تعذر جلب التاريخ الكامل لحساب الـPercentiles - عرض السعر اللحظي بس.")
+
+            st.markdown("##### 🧮 السعر النظري للفضة عند نسب مرجعية مختلفة (Implied Silver Price)")
+            st.caption("قسم 9: مش السعر العادل المطلق - سعر نسبي مبني على GSR مرجعي مختارة.")
+            reference_ratios = [40, 70, 85, 100, 120]
+            implied_rows = []
+            for ref_ratio in reference_ratios:
+                implied = implied_silver_price(gold_snap["price"], ref_ratio)
+                gap = fair_value_gap_pct(implied, silver_snap["price"])
+                implied_rows.append({
+                    "Reference GSR": f"{ref_ratio}:1",
+                    "السعر النظري للفضة": f"${implied:.2f}" if implied else "-",
+                    "Fair Value Gap %": f"{gap:+.1f}%" if gap is not None else "-",
+                })
+            st.dataframe(pd.DataFrame(implied_rows), use_container_width=True, hide_index=True)
+
+            with st.expander("🥉🥈 باقي المعادن (بلاتين/بالاديوم/نحاس)"):
+                for name, yticker in GLOBAL_ASSETS["metals"].items():
+                    if yticker in ("GC=F", "SI=F"):
+                        continue
+                    snap = fetch_global_asset_snapshot(yticker)
+                    if snap:
+                        st.metric(name, f"${snap['price']:,.2f}",
+                                  f"{snap['change_1d_%']:+.2f}%" if snap['change_1d_%'] is not None else None)
+
+    with global_tab:
+        for group_key, group_label in [("fx", "💱 الفوركس"), ("crypto", "₿ العملات الرقمية"), ("energy", "🛢️ الطاقة")]:
+            st.markdown(f"##### {group_label}")
+            cols = st.columns(4)
+            for i, (name, yticker) in enumerate(GLOBAL_ASSETS[group_key].items()):
+                snap = fetch_global_asset_snapshot(yticker)
+                with cols[i % 4]:
+                    if snap:
+                        st.metric(
+                            name, f"{snap['price']:,.4f}" if group_key == "fx" else f"${snap['price']:,.2f}",
+                            f"{snap['change_1d_%']:+.2f}%" if snap['change_1d_%'] is not None else None,
+                        )
+                    else:
+                        st.caption(f"{name}: مفيش بيانات متاحة")
+            st.write("---")
+
+        st.caption(
+            "⚠️ الأسعار دي معلوماتية بس ولسه مش مربوطة بتحليل الأسهم المصرية "
+            "(Correlation Engine ومحرك Market Regime لسه مرحلة قادمة)."
+        )
