@@ -1667,6 +1667,107 @@ def determine_gsr_alert(current_gsr: float, percentiles: dict, silver_momentum_u
     return "⚪ ضمن النطاق التاريخي المعتاد (مفيش تنبيه)"
 
 
+# ---------------------------------------------------------------------------
+# Risk Engine Core - EAGLE INVESTOR OS 2.0 (قسم 4، Phase 5)
+# ---------------------------------------------------------------------------
+def fetch_holding_risk_snapshot(ticker: str):
+    """
+    يجيب البيانات اللازمة لتحليل مخاطر مركز واحد في المحفظة: السعر
+    الحالي، القطاع، التقلب اليومي، ATR%، وقف خسارة مقترح، وسلسلة العوائد
+    اليومية (لحساب الارتباط بين المراكز). يرجع None لو فشل الجلب.
+    """
+    try:
+        df = fetch_single_stock(ticker)
+        if df is None or df.empty or len(df) < 20:
+            return None
+        df = calculate_indicators(df)
+        last = df.iloc[-1]
+        price = float(last['Close'])
+        daily_vol = float(last['Daily_Volatility_%']) if pd.notna(last.get('Daily_Volatility_%', np.nan)) else None
+        atr_pct = float(last['ATR_%']) if pd.notna(last.get('ATR_%', np.nan)) else None
+        atr_14 = float(last['ATR_14']) if pd.notna(last.get('ATR_14', np.nan)) else 0.0
+        sector = get_sector(ticker)
+
+        nearest_support, _ = find_support_resistance(df)
+        support_distance = (price - nearest_support) if nearest_support is not None else 0
+        min_stop_distance = max(0.5 * atr_14, price * 0.01)
+        if nearest_support is not None and min_stop_distance <= support_distance <= price * 0.08:
+            stop_loss = nearest_support
+        else:
+            stop_loss = max(price - 1.5 * atr_14, price * 0.9)
+
+        avg_trade_value = float((df['Close'] * df['Volume']).tail(10).mean())
+        returns = df['Close'].pct_change().tail(60)
+
+        return {
+            "price": price, "sector": sector, "daily_volatility_%": daily_vol,
+            "atr_%": atr_pct, "stop_loss": stop_loss, "returns": returns,
+            "avg_trade_value": avg_trade_value,
+        }
+    except Exception:
+        return None
+
+
+def compute_portfolio_risk_metrics(holdings: dict):
+    """
+    Core Risk Metrics على مستوى المحفظة كلها (قسم 4 من الخطة):
+    Concentration، Sector Exposure، Portfolio Volatility (محسوبة صح
+    بمصفوفة التغاير مش مجرد متوسط بسيط)، Correlation Risk، Stop Risk
+    (Money at Risk)، وStress Loss تقريبي.
+
+    holdings: {ticker: {"weight": 0..1, "sector": str,
+               "daily_volatility_%": float|None, "atr_%": float|None,
+               "money_at_risk_pct": float|None, "avg_trade_value": float|None,
+               "returns": pd.Series|None}}
+    """
+    if not holdings:
+        return None
+
+    weights = {t: h["weight"] for t, h in holdings.items()}
+    concentration_ticker = max(weights, key=weights.get)
+    concentration_pct = round(weights[concentration_ticker] * 100, 1)
+
+    sector_exposure = {}
+    for t, h in holdings.items():
+        sector_exposure[h["sector"]] = sector_exposure.get(h["sector"], 0) + h["weight"]
+    sector_exposure = {s: round(v * 100, 1) for s, v in sector_exposure.items()}
+
+    # Portfolio Volatility + Correlation - بمصفوفة التغاير الحقيقية مش تقريب ساذج
+    returns_data = {t: h["returns"] for t, h in holdings.items() if h.get("returns") is not None and h["returns"].dropna().shape[0] > 10}
+    correlation_matrix = None
+    portfolio_vol_annualized = None
+    high_correlation_pairs = []
+    if len(returns_data) >= 2:
+        returns_df = pd.DataFrame(returns_data).dropna()
+        if len(returns_df) > 10:
+            correlation_matrix = returns_df.corr()
+            cov_matrix = returns_df.cov()
+            cols = list(correlation_matrix.columns)
+            w_vec = np.array([weights[t] for t in cols])
+            portfolio_variance_daily = float(w_vec @ cov_matrix.values @ w_vec)
+            portfolio_vol_daily = np.sqrt(max(portfolio_variance_daily, 0))
+            portfolio_vol_annualized = round(portfolio_vol_daily * np.sqrt(252) * 100, 1)
+            for i in range(len(cols)):
+                for j in range(i + 1, len(cols)):
+                    corr_val = float(correlation_matrix.iloc[i, j])
+                    if corr_val > 0.7:
+                        high_correlation_pairs.append((cols[i], cols[j], round(corr_val, 2)))
+
+    money_at_risk_values = [h["money_at_risk_pct"] for h in holdings.values() if h.get("money_at_risk_pct") is not None]
+    total_stop_risk_pct = round(sum(money_at_risk_values), 1) if money_at_risk_values else None
+
+    stress_loss_values = [h["weight"] * h["atr_%"] for h in holdings.values() if h.get("atr_%") is not None]
+    stress_loss_pct = round(sum(stress_loss_values), 1) if stress_loss_values else None
+
+    return {
+        "concentration_ticker": concentration_ticker, "concentration_pct": concentration_pct,
+        "sector_exposure": sector_exposure,
+        "portfolio_volatility_annualized_%": portfolio_vol_annualized,
+        "correlation_matrix": correlation_matrix, "high_correlation_pairs": high_correlation_pairs,
+        "total_stop_risk_pct": total_stop_risk_pct, "stress_loss_pct": stress_loss_pct,
+    }
+
+
 def _score_trend(e9, e21, adx_val, p, ema200_ok=None):
     """Trend (15 نقطة): تقاطع EMA9/21 + قوة الاتجاه ADX."""
     score = 0.0
@@ -2684,14 +2785,12 @@ with tab2:
         short_term_trading = []
         long_term_investment = []
         eagle_raw = {}  # ticker -> ingredients لازمة لحساب Relative/Sector Strength بعد ما المسح يخلص
+        breadth_counts = {"advancing": 0, "declining": 0, "unchanged": 0}
 
         egx30_change_20d = fetch_egx30_change_20d()
         market_regime_info = detect_market_regime()
         market_regime_component = market_regime_score_component(market_regime_info)
-        if market_regime_info:
-            regime_banner = st.container()
-            with regime_banner:
-                st.info(f"🌐 **حالة السوق العامة (EGX30):** {market_regime_info['regime']}")
+        regime_banner_placeholder = st.empty()
 
         progress_bar = st.progress(0)
         total_stocks = len(scan_stocks)
@@ -2793,6 +2892,12 @@ with tab2:
                     rvol = float(row['RVOL']) if pd.notna(row['RVOL']) else 1.0
                     yesterday_close = float(stock_df['Close'].iloc[-2]) if len(stock_df) >= 2 else p
                     price_up_today = p > yesterday_close
+                    if p == yesterday_close:
+                        breadth_counts["unchanged"] += 1
+                    elif price_up_today:
+                        breadth_counts["advancing"] += 1
+                    else:
+                        breadth_counts["declining"] += 1
                     if rvol >= 1.5 and price_up_today:
                         rvol_signal = f"🟢 {rvol:.1f}x (صعود بحجم قوي)"
                     elif rvol >= 1.5 and not price_up_today:
@@ -2976,6 +3081,24 @@ with tab2:
                     skipped_count += 1
                     skipped_names.append((name, ticker, f"خطأ أثناء التحليل: {e}"))
                     continue
+
+            # --- Market Breadth (Phase 3) - Advance/Decline لكل الأسهم اللي اتمسحت ---
+            total_breadth = sum(breadth_counts.values())
+            if total_breadth > 0:
+                breadth_score = round((breadth_counts["advancing"] / total_breadth) * 100, 1)
+                st.session_state["last_market_breadth"] = {
+                    "score": breadth_score, "counts": breadth_counts, "total": total_breadth,
+                }
+                with regime_banner_placeholder.container():
+                    if market_regime_info:
+                        st.info(f"🌐 **حالة السوق العامة (EGX30):** {market_regime_info['regime']}")
+                    bcol1, bcol2, bcol3, bcol4 = st.columns(4)
+                    bcol1.metric("📈 صاعدة اليوم", breadth_counts["advancing"])
+                    bcol2.metric("📉 هابطة اليوم", breadth_counts["declining"])
+                    bcol3.metric("➖ ثابتة", breadth_counts["unchanged"])
+                    bcol4.metric("Market Breadth", f"{breadth_score:.0f}%",
+                                 "اتساع صاعد" if breadth_score >= 60 else ("اتساع هابط" if breadth_score <= 40 else "متوازن"))
+                    st.caption(f"من إجمالي {total_breadth} سهم اتمسحوا في الجلسة دي (مش كل سوق مصر بالضرورة - حسب اختيارك للسوق/القطاعات فوق).")
 
             # --- استكمال Eagle Score: Relative Strength + Sector Strength ---
             # دول محتاجين بيانات كل الأسهم اللي اتمسحت مع بعض، فبيتحسبوا هنا
@@ -3226,6 +3349,68 @@ with tab3:
         total_value_rows = [r["الربح/الخسارة (قيمة)"] for r in rows if r["الربح/الخسارة (قيمة)"] is not None]
         if total_value_rows:
             st.metric("إجمالي الربح/الخسارة (للأسهم اللي معاها كمية)", f"{sum(total_value_rows):,.2f}")
+
+        # --- Risk Engine Core - EAGLE INVESTOR OS 2.0 (قسم 4) ---
+        st.write("---")
+        st.markdown("##### 🛡️ Risk Engine - مخاطر المحفظة")
+        qty_rows = portfolio_df[(portfolio_df.get("quantity", 0) > 0)] if "quantity" in portfolio_df.columns else pd.DataFrame()
+        if qty_rows.empty:
+            st.caption("محتاجين تدخل **الكمية** لكل سهم (مش بس سعر الدخول) عشان نقدر نحسب أوزان المحفظة ومخاطرها.")
+        else:
+            if st.button("🔍 تحليل مخاطر المحفظة الآن", key="run_risk_engine"):
+                with st.spinner("بنجيب بيانات كل سهم في محفظتك ونحسب المخاطر..."):
+                    holdings = {}
+                    failed_holdings = []
+                    values = {}
+                    for _, r in qty_rows.iterrows():
+                        snap = fetch_holding_risk_snapshot(r["ticker"])
+                        if snap is None:
+                            failed_holdings.append(r["ticker"])
+                            continue
+                        values[r["ticker"]] = r["quantity"] * snap["price"]
+                        holdings[r["ticker"]] = snap
+
+                    total_value = sum(values.values())
+                    if total_value <= 0 or not holdings:
+                        st.warning("تعذر جلب بيانات كافية لحساب المخاطر دلوقتي.")
+                    else:
+                        for t in holdings:
+                            weight = values[t] / total_value
+                            entry_row = qty_rows[qty_rows["ticker"] == t].iloc[0]
+                            qty = entry_row["quantity"]
+                            money_at_risk = qty * max(holdings[t]["price"] - holdings[t]["stop_loss"], 0)
+                            holdings[t]["weight"] = weight
+                            holdings[t]["money_at_risk_pct"] = round((money_at_risk / total_value) * 100, 2)
+
+                        risk_result = compute_portfolio_risk_metrics(holdings)
+
+                        rc1, rc2, rc3 = st.columns(3)
+                        rc1.metric("Concentration Risk", f"{risk_result['concentration_pct']}%", risk_result['concentration_ticker'])
+                        rc2.metric("تقلب المحفظة السنوي (تقريبي)", f"{risk_result['portfolio_volatility_annualized_%']}%" if risk_result['portfolio_volatility_annualized_%'] is not None else "-")
+                        rc3.metric("Stop Risk (أقصى خسارة لو كل الوقوف اتكسرت)", f"{risk_result['total_stop_risk_pct']}%" if risk_result['total_stop_risk_pct'] is not None else "-")
+
+                        st.markdown("**Sector Exposure (التعرض حسب القطاع):**")
+                        st.dataframe(
+                            pd.DataFrame([{"القطاع": s, "النسبة من المحفظة %": v} for s, v in risk_result["sector_exposure"].items()]),
+                            use_container_width=True, hide_index=True,
+                        )
+                        if any(v > 40 for v in risk_result["sector_exposure"].values()):
+                            st.warning("⚠️ في قطاع واحد بيمثل أكتر من 40% من محفظتك - تركّز قطاعي عالي.")
+
+                        if risk_result["high_correlation_pairs"]:
+                            st.markdown("**⚠️ مراكز مترابطة بشدة (Correlation Risk):**")
+                            for t1, t2, corr in risk_result["high_correlation_pairs"]:
+                                st.caption(f"- {t1} و {t2}: ارتباط {corr} (بيتحركوا مع بعض تقريباً - التنويع بينهم محدود فعلياً)")
+
+                        if risk_result["stress_loss_pct"] is not None:
+                            st.metric("Stress Loss (سيناريو: كل سهم يهبط بمقدار تقلبه اليومي المعتاد ATR مرة واحدة)", f"-{risk_result['stress_loss_pct']}%")
+
+                        st.caption(
+                            "⚠️ المقاييس دي تقديرات مبنية على بيانات تاريخية محدودة (آخر 60 يوم للارتباط) - "
+                            "مش ضمان، والمخاطرة الفعلية ممكن تختلف في ظروف سوق غير عادية."
+                        )
+                        if failed_holdings:
+                            st.caption(f"تعذر جلب بيانات: {', '.join(failed_holdings)}")
 
 
 with tab4:
