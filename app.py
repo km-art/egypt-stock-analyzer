@@ -8,6 +8,312 @@ import plotly.graph_objects as go
 import requests
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# جلسة yfinance مضادة للحظر (Yahoo بيحظر السيرفرات المشتركة زي Streamlit Cloud)
+# ---------------------------------------------------------------------------
+# الحل المعتمد حالياً من مجتمع yfinance: استخدام curl_cffi عشان يقلّد بصمة
+# متصفح حقيقي (TLS/JA3 fingerprint) بدل مكتبة requests العادية اللي Yahoo
+# بقى يعرفها ويحظرها بسهولة على الـ IPs المشتركة زي Streamlit Cloud.
+@st.cache_resource
+def get_yf_session():
+    try:
+        from curl_cffi import requests as cffi_requests
+        return cffi_requests.Session(impersonate="chrome")
+    except Exception:
+        # لو curl_cffi مش متثبتة لأي سبب، استخدم requests عادية بدل ما يقع الكود
+        return requests.Session()
+
+
+YF_SESSION = get_yf_session()
+
+# ---------------------------------------------------------------------------
+# مصدر بيانات مصر (EGX): TradingView بدل Yahoo
+# ---------------------------------------------------------------------------
+# Yahoo Finance وقفت تحدّث بيانات بورصة مصر (لاحظنا آخر تحديث متجمد على تاريخ
+# قديم لكل الأسهم المصرية). TradingView عندها بيانات محدّثة يومياً وبتغطية
+# أقوى لـ EGX، فبنستخدم مكتبة tvDatafeed (غير رسمية، بتقرا نفس البيانات اللي
+# موقع TradingView بيعرضها) عشان نجيب تاريخ أسعار كامل (Open/High/Low/Close/
+# Volume) بديل عن Yahoo لسوق مصر بس. أمريكا والإمارات فاضلين على Yahoo زي ما
+# هما لأن بياناتهم شغالة تمام.
+#
+# ملحوظة: المكتبة غير رسمية (بتحاكي طلبات الموقع الداخلية)، ممكن تتعطل لو
+# TradingView غيّرت حاجة من غير سابق إنذار - لو حصل كده، هترجع النتيجة فاضية
+# وهيظهر السهم في "الأسهم اللي اتخطاها" بدل ما الكود يقع.
+@st.cache_resource
+def get_tv_datafeed():
+    try:
+        from tvDatafeed import TvDatafeed
+        return TvDatafeed()  # وضع "بدون تسجيل دخول" - شغال لمعظم أسهم EGX
+    except Exception:
+        return None
+
+
+TV_DATAFEED = get_tv_datafeed()
+
+
+def fetch_egx_history_tv(egx_ticker: str, n_bars: int = 150):
+    """
+    يجيب تاريخ أسعار سهم مصري من TradingView (مش Yahoo) ويرجعه بنفس صيغة
+    yfinance المعتادة (أعمدة Open/High/Low/Close/Volume) عشان باقي الكود
+    (calculate_indicators وغيرها) يشتغل من غير أي تعديل.
+    يرجع DataFrame فاضي لو فشل (بدل ما يرمي Exception ويوقف المسح كله).
+    """
+    if TV_DATAFEED is None:
+        return pd.DataFrame()
+    try:
+        from tvDatafeed import Interval
+        bare_symbol = egx_ticker[:-3] if egx_ticker.endswith(".CA") else egx_ticker
+        hist = TV_DATAFEED.get_hist(
+            symbol=bare_symbol, exchange="EGX",
+            interval=Interval.in_daily, n_bars=n_bars,
+        )
+        if hist is None or hist.empty:
+            return pd.DataFrame()
+        hist = hist.rename(columns={
+            "open": "Open", "high": "High", "low": "Low",
+            "close": "Close", "volume": "Volume",
+        })
+        return hist[["Open", "High", "Low", "Close", "Volume"]]
+    except Exception:
+        return pd.DataFrame()
+
+
+# ---------------------------------------------------------------------------
+# Market Depth Engine (Level 2 / Order Book) - مرحلة 2 من خطة التطوير
+# ---------------------------------------------------------------------------
+# قرار هندسي مهم (زي ما الخطة نفسها بتنص): مش بنربط عمق السوق جوه
+# calculate_indicators() - ده محرك مستقل تماماً، ولو مصدر البيانات فشل أو
+# مفيش مفتاح API، الأداة تفضل شغالة عادي بالتحليل الفني بس (V1) من غير أي
+# تعطل. عمق السوق هنا **عرض معلوماتي بس حالياً** ومش بيدخل في قرار
+# الشراء/البيع أو في نظام النقاط - زي ما الخطة أوصت (خطوة 8-9: اختبار
+# وbacktest الأول قبل الاعتماد عليه في القرار).
+#
+# المصدر: EGXAPI (egxapi.com) - لسه "Developer Preview"، لسه مش مثبتة
+# الاستقرار. بنستخدم بس الـ endpoints الخاصة بقراءة البيانات (quotes/order
+# book)، وممنوع مطلقاً استخدام أي endpoint بيبعت أو يعدّل أو يلغي أوامر
+# تداول حقيقية - ده تطبيق تحليل وترشيح، مش أداة تنفيذ صفقات.
+#
+# لازم مفتاح API (EGXAPI_KEY) في Streamlit Secrets عشان يشتغل. من غيره،
+# كل الدوال هنا بترجع None بهدوء والتطبيق يفضل شغال زي ما هو.
+def get_egxapi_key():
+    try:
+        return st.secrets.get("EGXAPI_KEY", None)
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=15, show_spinner=False)  # كاش قصير جداً (15 ثانية) لأن العمق بيتغير بسرعة
+def fetch_order_book_egxapi(bare_symbol: str):
+    """
+    يجيب order book خام لسهم من EGXAPI (قراءة فقط - مفيش أي إمكانية تنفيذ
+    أوامر من هنا). يرجع None لو مفيش مفتاح API أو المصدر فشل - بهدوء من
+    غير ما يوقف باقي التطبيق.
+
+    ملحوظة: شكل الاستجابة هنا افتراضي (bids/asks كـ [price, size]) بناءً
+    على النمط الشائع لـ APIs زي دي - لسه محتاج اختبار فعلي بمفتاح حقيقي
+    عشان نتأكد ونظبط أسماء الحقول لو مختلفة.
+    """
+    api_key = get_egxapi_key()
+    if not api_key:
+        return None
+    try:
+        resp = requests.get(
+            f"https://api.egxapi.com/v2/marketdata/{bare_symbol}/orderbook",
+            headers={"Authorization": f"Bearer {api_key}", "X-EGX-Env": "paper"},
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+    except Exception:
+        return None
+
+
+def normalize_to_adapter_schema(raw_order_book: dict, symbol: str, source: str = "egxapi"):
+    """
+    MarketDataAdapter: بيحوّل استجابة أي مصدر (EGXAPI دلوقتي، وممكن ICE لاحقاً)
+    لشكل موحّد واحد زي ما الخطة حددت بالظبط:
+    symbol | timestamp | bids[] | asks[] | last_price | last_trade_size |
+    market_phase | source | data_age
+
+    الفايدة: باقي الكود (فحص الجودة، حساب المقاييس، العرض) بيتعامل مع
+    الشكل الموحّد ده بس، فلو غيّرنا المصدر لـICE مستقبلاً، بس الدالة دي
+    اللي هتتغيّر - مفيش حاجة تانية في الكود هتتأثر.
+    """
+    if not raw_order_book:
+        return None
+    try:
+        raw_ts = raw_order_book.get("timestamp") or raw_order_book.get("ts")
+        if raw_ts:
+            ts = pd.to_datetime(raw_ts, utc=True, errors="coerce")
+        else:
+            ts = None
+        data_age_sec = (pd.Timestamp.now("UTC") - ts).total_seconds() if ts is not None and pd.notna(ts) else None
+
+        return {
+            "symbol": symbol,
+            "timestamp": ts,
+            "bids": raw_order_book.get("bids", []),
+            "asks": raw_order_book.get("asks", []),
+            "last_price": raw_order_book.get("last_price"),
+            "last_trade_size": raw_order_book.get("last_trade_size"),
+            "market_phase": raw_order_book.get("market_phase", "unknown"),
+            "source": source,
+            "data_age_sec": data_age_sec,
+        }
+    except Exception:
+        return None
+
+
+def validate_order_book(adapted: dict, max_staleness_sec: float = 60.0, min_levels: int = 1):
+    """
+    فحوصات جودة البيانات زي ما الخطة نصّت (قسم 5) - قبل أي حساب:
+    - timestamp موجود وحديث (مش قديم أكتر من max_staleness_sec)
+    - الأسعار والكميات مش سالبة
+    - مستويات Bid تنازلية وAsk تصاعدية
+    - snapshot مش فاضي وفيه عدد مستويات كافي
+
+    يرجع (is_valid: bool, reason: str) - reason بتتعرض للمستخدم عشان
+    يبقى واضح ليه Market Depth مش شغالة دلوقتي، بدل ما يفضل غامض.
+    """
+    if not adapted:
+        return False, "مفيش بيانات وصلت من المصدر"
+
+    bids, asks = adapted.get("bids") or [], adapted.get("asks") or []
+    if len(bids) < min_levels or len(asks) < min_levels:
+        return False, "عدد مستويات Bid/Ask غير كافي (snapshot ناقص)"
+
+    if adapted.get("data_age_sec") is not None and adapted["data_age_sec"] > max_staleness_sec:
+        return False, f"البيانات قديمة (عمرها {adapted['data_age_sec']:.0f} ثانية) - Stale Data"
+
+    try:
+        bid_prices = [float(b[0]) for b in bids]
+        ask_prices = [float(a[0]) for a in asks]
+        bid_sizes = [float(b[1]) for b in bids]
+        ask_sizes = [float(a[1]) for a in asks]
+    except (ValueError, IndexError, TypeError):
+        return False, "تنسيق أسعار/كميات غير صالح"
+
+    if any(p < 0 for p in bid_prices + ask_prices) or any(s < 0 for s in bid_sizes + ask_sizes):
+        return False, "قيم سالبة في الأسعار أو الكميات (بيانات غير سليمة)"
+
+    if bid_prices != sorted(bid_prices, reverse=True):
+        return False, "ترتيب مستويات Bid غير صحيح (المفروض تنازلي)"
+    if ask_prices != sorted(ask_prices):
+        return False, "ترتيب مستويات Ask غير صحيح (المفروض تصاعدي)"
+
+    if bid_prices[0] >= ask_prices[0]:
+        return False, "السوق متقاطع (Best Bid >= Best Ask) - بيانات غير منطقية"
+
+    return True, "سليم"
+
+
+def compute_market_depth_metrics(adapted: dict, depth_levels: int = 10):
+    """
+    بيحوّل order book (بعد التطبيع والتحقق) لمقاييس موحدة:
+    Bid/Ask Imbalance, Depth 5, Depth 10, Spread %.
+    يرجع dict فاضي {} لو البيانات مش سليمة (بدل ما يرمي Exception).
+    """
+    if not adapted:
+        return {}
+    try:
+        bids, asks = adapted["bids"], adapted["asks"]
+        best_bid = float(bids[0][0])
+        best_ask = float(asks[0][0])
+        mid_price = (best_bid + best_ask) / 2
+        spread_pct = ((best_ask - best_bid) / mid_price) * 100 if mid_price > 0 else None
+
+        def depth_sum(levels, n):
+            return sum(float(lvl[1]) for lvl in levels[:n])
+
+        bid_depth_5, ask_depth_5 = depth_sum(bids, 5), depth_sum(asks, 5)
+        bid_depth_10, ask_depth_10 = depth_sum(bids, depth_levels), depth_sum(asks, depth_levels)
+
+        total_depth_10 = bid_depth_10 + ask_depth_10
+        imbalance_pct = ((bid_depth_10 - ask_depth_10) / total_depth_10) * 100 if total_depth_10 > 0 else None
+        depth5_ratio = (bid_depth_5 / ask_depth_5) if ask_depth_5 > 0 else None
+        depth10_ratio = (bid_depth_10 / ask_depth_10) if ask_depth_10 > 0 else None
+
+        return {
+            "symbol": adapted["symbol"], "source": adapted["source"],
+            "data_age_sec": adapted.get("data_age_sec"),
+            "market_phase": adapted.get("market_phase"),
+            "last_price": adapted.get("last_price"),
+            "best_bid": best_bid, "best_ask": best_ask, "mid_price": mid_price,
+            "spread_%": round(spread_pct, 3) if spread_pct is not None else None,
+            "bid_depth_5": bid_depth_5, "ask_depth_5": ask_depth_5,
+            "bid_depth_10": bid_depth_10, "ask_depth_10": ask_depth_10,
+            "depth5_ratio": round(depth5_ratio, 2) if depth5_ratio is not None else None,
+            "depth10_ratio": round(depth10_ratio, 2) if depth10_ratio is not None else None,
+            "imbalance_%": round(imbalance_pct, 1) if imbalance_pct is not None else None,
+        }
+    except Exception:
+        return {}
+
+
+def track_depth_momentum(symbol: str, imbalance_pct: float, max_history: int = 5):
+    """
+    Depth Momentum / Stability: بنسجل آخر كام قراءة لـ Imbalance لكل سهم في
+    session_state (طول ما التطبيق مفتوح)، عشان نشوف الاتجاه بيتحسن ولا
+    بيتراجع بمرور الوقت - زي ما الخطة نصّت: قراءة واحدة +34% أضعف من سلسلة
+    متصاعدة +5% ثم +12% ثم +21% ثم +34%.
+
+    ملحوظة: التتبع ده بيتصفر لما التطبيق يعمل reload كامل (مفيش تخزين
+    دائم بين الجلسات) - ده كافي لمتابعة لحظية أثناء الاستخدام، مش بديل
+    عن تسجيل تاريخي حقيقي لازم لـBacktest (قسم 12 في الخطة - لسه محتاج
+    قرار تخزين منفصل قبل ما نبنيه).
+    """
+    if "depth_momentum_history" not in st.session_state:
+        st.session_state["depth_momentum_history"] = {}
+    history = st.session_state["depth_momentum_history"].setdefault(symbol, [])
+    if imbalance_pct is not None:
+        history.append(imbalance_pct)
+        if len(history) > max_history:
+            history.pop(0)
+
+    if len(history) < 2:
+        return {"trend": "غير كافي بعد", "stability": None, "history": history}
+
+    diffs = [history[i] - history[i - 1] for i in range(1, len(history))]
+    consistently_rising = all(d > 0 for d in diffs)
+    consistently_falling = all(d < 0 for d in diffs)
+    if consistently_rising:
+        trend = "📈 عدم التوازن بيتصاعد باستمرار (إشارة أقوى من قراءة منفردة)"
+    elif consistently_falling:
+        trend = "📉 عدم التوازن بيتراجع باستمرار"
+    else:
+        trend = "↔️ متذبذب (مفيش اتجاه واضح)"
+
+    stability = round(np.std(history), 1) if len(history) >= 2 else None
+    return {"trend": trend, "stability": stability, "history": history}
+
+
+def get_market_depth(bare_symbol: str):
+    """
+    نقطة الدخول الموحدة: بتجيب البيانات الخام، تطبّعها لشكل Adapter
+    الموحّد، تتحقق من جودتها، وبعدين بس تحسب المقاييس. يرجع
+    (metrics_dict أو None, reason_if_unavailable). لو الجودة فشلت، بيرجع
+    None + السبب بدل ما يملأ قيم صفر بتخلي السهم يبان ضعيف بشكل مصطنع
+    (زي ما الخطة أكدت في قسم 13).
+    """
+    raw = fetch_order_book_egxapi(bare_symbol)
+    if raw is None:
+        return None, "مفيش اتصال بمصدر عمق السوق (مفيش مفتاح أو المصدر مش راد)"
+
+    adapted = normalize_to_adapter_schema(raw, symbol=bare_symbol)
+    is_valid, reason = validate_order_book(adapted)
+    if not is_valid:
+        return None, f"البيانات مرفوضة بعد فحص الجودة: {reason}"
+
+    metrics = compute_market_depth_metrics(adapted)
+    if not metrics:
+        return None, "فشل حساب مقاييس العمق من البيانات المتاحة"
+
+    momentum = track_depth_momentum(bare_symbol, metrics.get("imbalance_%"))
+    metrics["depth_momentum"] = momentum
+    return metrics, "سليم"
+
+
 # إعدادات الصفحة والمظهر العام
 st.set_page_config(page_title="محلل البورصة المصرية الاحترافي 🇪🇬📈", layout="wide")
 
@@ -177,7 +483,7 @@ def get_live_price_yahoo(ticker: str) -> dict:
     الأقل تغطية. بيرجع لآخر إغلاق يومي تلقائياً لو فشل.
     """
     try:
-        fast = yf.Ticker(resolve_symbol(ticker)).fast_info
+        fast = yf.Ticker(resolve_symbol(ticker), session=YF_SESSION).fast_info
         price = fast.get("last_price") if hasattr(fast, "get") else getattr(fast, "last_price", None)
         if price is not None and price > 0:
             return {"price": float(price), "is_live": True}
@@ -1023,50 +1329,6 @@ def get_egx_index(ticker: str) -> str:
     return "غير منطبق (مش سهم مصري)"
 
 
-# مؤشرات مرجعية لكل سوق (اتأكدنا من الرموز فعلياً عبر بحث ويب - مش تخمين)
-BENCHMARK_TICKERS = {
-    "egx": "^CASE30",   # مؤشر EGX30 الرسمي
-    "us": "^GSPC",       # S&P 500
-    "uae": "DFMGI.AE",   # مؤشر دبي المالي العام (أقرب تقريب متاح)
-}
-
-
-def get_market_key(ticker: str) -> str | None:
-    """يرجع 'egx'/'us'/'uae' حسب السوق اللي السهم منه، أو None لو مش لاقيه."""
-    for key, m in MARKETS.items():
-        if ticker in m["stocks"].values():
-            return key
-    return None
-
-
-def fetch_benchmark_return(market_key: str, cache: dict) -> float | None:
-    """
-    يجيب عائد سنة للمؤشر المرجعي للسوق ده، مع كاش بسيط عشان نجيبه مرة واحدة
-    بس لكل سوق مش لكل سهم على حدة.
-    """
-    if market_key in cache:
-        return cache[market_key]
-
-    benchmark_ticker = BENCHMARK_TICKERS.get(market_key)
-    if not benchmark_ticker:
-        cache[market_key] = None
-        return None
-
-    try:
-        df = yf.download(benchmark_ticker, period="1y", progress=False, group_by='ticker')
-        if df is None or df.empty or len(df) < 60:
-            cache[market_key] = None
-            return None
-        close = df['Close'].squeeze() if not isinstance(df.columns, pd.MultiIndex) else df[benchmark_ticker]['Close']
-        ret_1y = float((close.iloc[-1] / close.iloc[0] - 1) * 100)
-        cache[market_key] = ret_1y
-        return ret_1y
-    except Exception as e:
-        print(f"⚠️  تعذر تحميل المؤشر المرجعي {benchmark_ticker} ({e}).")
-        cache[market_key] = None
-        return None
-
-
 def calculate_indicators(df):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(-1)
@@ -1094,7 +1356,454 @@ def calculate_indicators(df):
     df['MFI_14'] = 100 - (100 / (1 + (pos_mf14 / (neg_mf14 + 0.00001))))
     
     df['Vol_MA10'] = df['Volume'].rolling(window=10).mean()
+
+    # --- RVOL (الحجم النسبي) = فوليوم اليوم ÷ متوسط فوليوم 20 يوم ---
+    # بيتربط باتجاه السعر لاحقاً في منطق الفلترة (فوليوم عالي مش إيجابي تلقائياً،
+    # ده بيبقى تصريف لو حصل مع هبوط سعر مش صعود)
+    df['Vol_MA20'] = df['Volume'].rolling(window=20).mean()
+    df['RVOL'] = df['Volume'] / (df['Vol_MA20'] + 0.00001)
+
+    # --- ATR (متوسط المدى الحقيقي) - مقياس التقلب الفعلي للسهم ---
+    prev_close = df['Close'].shift(1)
+    true_range = pd.concat([
+        df['High'] - df['Low'],
+        (df['High'] - prev_close).abs(),
+        (df['Low'] - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    df['ATR_14'] = true_range.rolling(window=14).mean()
+    df['ATR_%'] = (df['ATR_14'] / df['Close']) * 100  # ATR كنسبة من السعر، عشان تقارن بين أسهم بأسعار مختلفة
+
+    # --- ADX (قوة الاتجاه) + DI+ / DI- ---
+    up_move = df['High'].diff()
+    down_move = -df['Low'].diff()
+    plus_dm = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0.0), index=df.index)
+    minus_dm = pd.Series(np.where((down_move > up_move) & (down_move > 0), down_move, 0.0), index=df.index)
+    atr_for_di = true_range.rolling(window=14).mean() + 0.00001
+    plus_di = 100 * (plus_dm.rolling(window=14).mean() / atr_for_di)
+    minus_di = 100 * (minus_dm.rolling(window=14).mean() / atr_for_di)
+    dx = 100 * ((plus_di - minus_di).abs() / (plus_di + minus_di + 0.00001))
+    df['ADX_14'] = dx.rolling(window=14).mean()
+    df['Plus_DI'] = plus_di
+    df['Minus_DI'] = minus_di
+
+    # --- قرب السهم من أعلى/أدنى سعر خلال آخر سنة (52 أسبوع تقريباً = 252 يوم تداول) ---
+    lookback_52w = min(len(df), 252)
+    df['High_52W'] = df['High'].rolling(window=lookback_52w, min_periods=1).max()
+    df['Low_52W'] = df['Low'].rolling(window=lookback_52w, min_periods=1).min()
+    df['Dist_From_52W_High_%'] = ((df['Close'] - df['High_52W']) / df['High_52W']) * 100  # سالب أو صفر
+    df['Dist_From_52W_Low_%'] = ((df['Close'] - df['Low_52W']) / df['Low_52W']) * 100      # موجب أو صفر
+
+    # --- التقلب اليومي (% متوسط حجم التذبذب اليومي خلال آخر 14 يوم) ---
+    daily_return_pct = df['Close'].pct_change() * 100
+    df['Daily_Volatility_%'] = daily_return_pct.rolling(window=14).std()
+
+    # --- عدد أيام الصعود المتتالية (لحد آخر يوم) ---
+    is_up_day = (df['Close'].diff() > 0).astype(int)
+    # عداد يتصفر أول ما يوم هابط أو ثابت يحصل، وبيتراكم في أيام الصعود
+    streak = is_up_day.copy()
+    for idx in range(1, len(streak)):
+        if is_up_day.iloc[idx] == 1:
+            streak.iloc[idx] = streak.iloc[idx - 1] + 1
+        else:
+            streak.iloc[idx] = 0
+    df['Consecutive_Up_Days'] = streak
+
+    # --- Accumulation/Distribution Line (تجميع/تصريف) ---
+    # Money Flow Multiplier: بيقيس فين قفل السهم داخل مدى اليوم (High-Low)
+    high_low_range = (df['High'] - df['Low']).replace(0, 0.0001)
+    money_flow_multiplier = ((df['Close'] - df['Low']) - (df['High'] - df['Close'])) / high_low_range
+    money_flow_volume = money_flow_multiplier * df['Volume']
+    df['AD_Line'] = money_flow_volume.cumsum()
+    # ميل خط A/D خلال آخر 10 أيام - بيوضح هل في تجميع هادي (يصعد) أو تصريف (يهبط)
+    df['AD_Line_Slope_10d'] = df['AD_Line'].diff(10)
+
     return df
+
+
+def find_support_resistance(df, order: int = 5, max_lookback: int = 150):
+    """
+    محرك دعم/مقاومة بسيط: بيدوّر على "نقاط انعكاس" (Swing High/Low) في آخر
+    max_lookback يوم - أي نقطة أعلى (أو أدنى) من الأيام اللي حواليها بمقدار
+    `order` يوم من الجهتين. من كل النقط دي، بنرجع أقرب مقاومة فوق السعر
+    الحالي وأقرب دعم تحته.
+
+    يرجع (nearest_support, nearest_resistance) - أي منهم ممكن يرجع None
+    لو مفيش بيانات كافية أو مفيش نقطة مناسبة.
+    """
+    sub = df.tail(max_lookback)
+    highs = sub['High'].values
+    lows = sub['Low'].values
+    n = len(sub)
+    if n < (order * 2 + 5):
+        return None, None
+
+    current_price = float(sub['Close'].iloc[-1])
+    resistance_levels = []
+    support_levels = []
+    for i in range(order, n - order):
+        window_h = highs[i - order:i + order + 1]
+        if highs[i] == window_h.max():
+            resistance_levels.append(float(highs[i]))
+        window_l = lows[i - order:i + order + 1]
+        if lows[i] == window_l.min():
+            support_levels.append(float(lows[i]))
+
+    resistances_above = [r for r in resistance_levels if r > current_price]
+    supports_below = [s for s in support_levels if s < current_price]
+    nearest_resistance = min(resistances_above) if resistances_above else None
+    nearest_support = max(supports_below) if supports_below else None
+    return nearest_support, nearest_resistance
+
+
+# ---------------------------------------------------------------------------
+# Eagle Score - نظام النقاط الموحّد (100 نقطة) - قسم 9 من خطة V2
+# ---------------------------------------------------------------------------
+EAGLE_WEIGHTS = {
+    "trend": 15, "momentum": 10, "volume_rvol": 10, "liquidity": 8,
+    "price_structure": 10, "breakout": 8, "relative_strength": 8,
+    "sector_strength": 4, "accumulation_distribution": 5, "risk_reward": 10,
+    "fundamentals": 2, "market_depth": 10,
+}  # المجموع = 100
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_egx30_change_20d():
+    """
+    بيجيب نسبة تغيّر مؤشر EGX30 خلال آخر 20 يوم تداول - أساس حساب
+    Relative Strength (قوة السهم النسبية مقابل السوق ككل).
+    يرجع None لو فشل الجلب (بدل ما يوقف حساب باقي الأداة).
+    """
+    try:
+        idx_df = fetch_egx_history_tv("EGX30.CA", n_bars=40)  # بنستخدم نفس دالة TradingView، الرمز نفسه EGX30
+        if idx_df is None or idx_df.empty or len(idx_df) < 21:
+            return None
+        change_pct = (idx_df['Close'].iloc[-1] / idx_df['Close'].iloc[-21] - 1) * 100
+        return float(change_pct)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Global Market Engine + Gold/Silver Ratio - V3 (قسم 4 و7-14)
+# ---------------------------------------------------------------------------
+GLOBAL_ASSETS = {
+    "fx": {
+        "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X",
+        "USD/CHF": "USDCHF=X", "USD/CNY": "USDCNY=X", "USD/TRY": "USDTRY=X",
+        "USD/BRL": "USDBRL=X", "USD/EGP": "USDEGP=X",
+    },
+    "crypto": {
+        "Bitcoin (BTC)": "BTC-USD", "Ethereum (ETH)": "ETH-USD",
+        "Solana (SOL)": "SOL-USD", "BNB": "BNB-USD", "XRP": "XRP-USD",
+    },
+    "metals": {
+        "الذهب (Gold)": "GC=F", "الفضة (Silver)": "SI=F",
+        "البلاتين (Platinum)": "PL=F", "البلاديوم (Palladium)": "PA=F",
+        "النحاس (Copper)": "HG=F",
+    },
+    "energy": {
+        "خام WTI": "CL=F", "خام برنت (Brent)": "BZ=F", "الغاز الطبيعي": "NG=F",
+    },
+}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_global_asset_snapshot(yahoo_ticker: str):
+    """
+    يجيب سعر لحظي (آخر إغلاق متاح) + نسب التغيّر (يومي/أسبوعي/شهري) لأصل
+    عالمي عن طريق yfinance (نفس الجلسة المضادة للحظر المستخدمة لأمريكا
+    والإمارات). يرجع None لو فشل الجلب - بهدوء من غير ما يوقف باقي التطبيق.
+    """
+    try:
+        df = yf.download(yahoo_ticker, period="35d", progress=False, session=YF_SESSION)
+        if df is None or df.empty or len(df) < 2:
+            return None
+        close = df['Close'].squeeze() if hasattr(df['Close'], 'squeeze') else df['Close']
+        last_price = float(close.iloc[-1])
+        change_1d = ((last_price / float(close.iloc[-2])) - 1) * 100 if len(close) >= 2 else None
+        change_1w = ((last_price / float(close.iloc[-6])) - 1) * 100 if len(close) >= 6 else None
+        change_1m = ((last_price / float(close.iloc[0])) - 1) * 100 if len(close) >= 20 else None
+        return {"price": last_price, "change_1d_%": change_1d, "change_1w_%": change_1w, "change_1m_%": change_1m}
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_gold_silver_history(period_days: int = 730):
+    """
+    يجيب تاريخ أسعار الذهب والفضة (سنتين تقريباً) لحساب GSR التاريخية
+    والـPercentiles - نفس المصدر (yfinance) ونفس الوحدة (USD/أونصة) للاتنين
+    زي ما الخطة أكدت (قسم 20: لازم نفس العملة ووحدة الوزن).
+    """
+    try:
+        gold = yf.download("GC=F", period=f"{period_days}d", progress=False, session=YF_SESSION)
+        silver = yf.download("SI=F", period=f"{period_days}d", progress=False, session=YF_SESSION)
+        if gold is None or gold.empty or silver is None or silver.empty:
+            return None
+        gold_close = gold['Close'].squeeze() if hasattr(gold['Close'], 'squeeze') else gold['Close']
+        silver_close = silver['Close'].squeeze() if hasattr(silver['Close'], 'squeeze') else silver['Close']
+        combined = pd.DataFrame({"gold": gold_close, "silver": silver_close}).dropna()
+        if combined.empty:
+            return None
+        combined["gsr"] = combined["gold"] / combined["silver"]
+        return combined
+    except Exception:
+        return None
+
+
+def compute_gsr(gold_price: float, silver_price: float):
+    """GSR = سعر أونصة الذهب ÷ سعر أونصة الفضة - بشرط نفس العملة ونفس وحدة الوزن (قسم 7)."""
+    if not gold_price or not silver_price or silver_price <= 0:
+        return None
+    return gold_price / silver_price
+
+
+def implied_silver_price(gold_price: float, reference_gsr: float):
+    """Implied Silver = Gold Price ÷ Reference GSR (قسم 9)."""
+    if not gold_price or not reference_gsr or reference_gsr <= 0:
+        return None
+    return gold_price / reference_gsr
+
+
+def fair_value_gap_pct(implied_price: float, actual_price: float):
+    """Fair Value Gap % = (Implied - Actual) ÷ Actual × 100 (قسم 10)."""
+    if not implied_price or not actual_price or actual_price <= 0:
+        return None
+    return ((implied_price - actual_price) / actual_price) * 100
+
+
+def compute_gsr_percentiles(gsr_history: pd.Series):
+    """Median، متوسط 1 سنة، وPercentiles (P10/25/50/75/90) للـGSR التاريخية (قسم 12)."""
+    if gsr_history is None or gsr_history.empty:
+        return None
+    return {
+        "median": float(gsr_history.median()),
+        "mean_1y": float(gsr_history.tail(252).mean()) if len(gsr_history) >= 30 else float(gsr_history.mean()),
+        "p10": float(gsr_history.quantile(0.10)),
+        "p25": float(gsr_history.quantile(0.25)),
+        "p50": float(gsr_history.quantile(0.50)),
+        "p75": float(gsr_history.quantile(0.75)),
+        "p90": float(gsr_history.quantile(0.90)),
+    }
+
+
+def determine_gsr_alert(current_gsr: float, percentiles: dict, silver_momentum_up: bool = None):
+    """
+    تنبيهات الفضة (قسم 14): SILVER RELATIVE CHEAP / WATCH / EXPENSIVE.
+    ملحوظة مهمة (زي ما الخطة أكدت): دي مؤشرات نسبية للسياق، مش توصية شراء
+    آلية - الأداة بتعرضها كمعلومة، القرار للمستخدم.
+    """
+    if current_gsr is None or percentiles is None:
+        return "⚪ غير محدد (بيانات غير كافية)"
+    if current_gsr >= percentiles["p75"]:
+        if silver_momentum_up:
+            return "🟡 WATCH (GSR مرتفع، بس زخم الفضة لسه صاعد - مفيش شراء آلي)"
+        return "🟢 SILVER RELATIVE CHEAP (GSR أعلى بكثير من التاريخي - الفضة رخيصة نسبياً للذهب)"
+    if current_gsr <= percentiles["p25"]:
+        return "🔴 SILVER RELATIVE EXPENSIVE (GSR منخفض جداً مقارنة بتاريخه)"
+    return "⚪ ضمن النطاق التاريخي المعتاد (مفيش تنبيه)"
+
+
+def _score_trend(e9, e21, adx_val, p, ema200_ok=None):
+    """Trend (15 نقطة): تقاطع EMA9/21 + قوة الاتجاه ADX."""
+    score = 0.0
+    if e9 > e21:
+        score += 8
+    strength_bonus = min(adx_val / 40, 1.0) * 7  # ADX=40+ يدي أقصى بونص
+    score += strength_bonus
+    return round(min(score, 15), 1)
+
+
+def _score_momentum(r, m, u, l, p):
+    """Momentum (10 نقاط): نفس منطق momentum_score القديم بس مُعاد توزينه لـ10."""
+    score = 0.0
+    if 50 <= m <= 70: score += 3.5
+    elif 35 <= m < 50: score += 1.5
+    elif m > 85: score -= 3
+    if 45 <= r <= 65: score += 3.5
+    elif r > 78: score -= 4
+    if u > l:
+        score += ((u - p) / (u - l)) * 3
+    return round(max(min(score, 10), -10), 1)
+
+
+def _score_volume_rvol(rvol, price_up_today):
+    """Volume/RVOL (10 نقاط): حجم نسبي مربوط باتجاه السعر."""
+    if rvol >= 2.0:
+        return 10.0 if price_up_today else -5.0
+    if rvol >= 1.5:
+        return 7.0 if price_up_today else -3.0
+    if rvol >= 1.0:
+        return 4.0 if price_up_today else 1.0
+    return 1.0
+
+
+def _score_liquidity(avg_trade_value):
+    """Liquidity (8 نقاط): حسب متوسط قيمة التداول اليومي التقريبي."""
+    if avg_trade_value >= 20_000_000: return 8.0
+    if avg_trade_value >= 5_000_000: return 6.0
+    if avg_trade_value >= 1_000_000: return 4.0
+    if avg_trade_value >= 300_000: return 2.0
+    return 0.0
+
+
+def _score_price_structure(p, nearest_support, nearest_resistance, dist_low_52w, dist_high_52w):
+    """Price Structure (10 نقاط): موقع السعر بين الدعم والمقاومة + موقعه من مدى 52 أسبوع."""
+    score = 0.0
+    if nearest_support is not None and nearest_resistance is not None and nearest_resistance > nearest_support:
+        position_in_range = (p - nearest_support) / (nearest_resistance - nearest_support)
+        # وسط النطاق (مش ملتصق بمقاومة ولا دعم) بيدي أعلى نقاط - مساحة تحرك في الاتجاهين
+        score += 6 * (1 - abs(position_in_range - 0.5) * 2) if 0 <= position_in_range <= 1 else 2
+    else:
+        score += 3  # مفيش هيكل واضح - نقاط محايدة
+    # قريب من قاع 52 أسبوع بمعقولية = فرصة، بعيد جداً عن القمة يعني مساحة صعود
+    if dist_high_52w <= -15:
+        score += 4  # مساحة صعود لسه موجودة
+    elif dist_high_52w >= -3:
+        score += 1  # قريب من القمة، مساحة صعود محدودة
+    else:
+        score += 2.5
+    return round(min(score, 10), 1)
+
+
+def _score_breakout(p, nearest_resistance, rvol, price_up_today):
+    """Breakout (8 نقاط): اختراق مقاومة قريبة بحجم مؤيد."""
+    if nearest_resistance is None:
+        return 2.0
+    dist_to_resistance_pct = (nearest_resistance - p) / p * 100
+    if p > nearest_resistance and rvol >= 1.5 and price_up_today:
+        return 8.0  # اختراق فعلي بحجم قوي
+    if p > nearest_resistance:
+        return 5.0  # اختراق بس بدون تأكيد حجم قوي
+    if 0 < dist_to_resistance_pct <= 3:
+        return 3.0  # قريب جداً من الاختراق
+    return 1.0
+
+
+def _score_relative_strength(stock_change_20d, egx30_change_20d):
+    """Relative Strength (8 نقاط): أداء السهم مقابل مؤشر EGX30 خلال 20 يوم."""
+    if stock_change_20d is None or egx30_change_20d is None:
+        return None  # مش N/A بصفر - علشان مايتحسبش ضد السهم بالغلط
+    relative_pct = stock_change_20d - egx30_change_20d
+    if relative_pct >= 15: return 8.0
+    if relative_pct >= 5: return 6.0
+    if relative_pct >= 0: return 4.0
+    if relative_pct >= -10: return 2.0
+    return 0.0
+
+
+def _score_sector_strength(sector_avg_change, overall_avg_change):
+    """Sector Strength (4 نقاط): متوسط أداء قطاع السهم مقابل متوسط أداء كل الأسهم الممسوحة."""
+    if sector_avg_change is None or overall_avg_change is None:
+        return None
+    relative_pct = sector_avg_change - overall_avg_change
+    if relative_pct >= 5: return 4.0
+    if relative_pct >= 0: return 2.5
+    if relative_pct >= -5: return 1.0
+    return 0.0
+
+
+def _score_accumulation_distribution(ad_slope_10d, vol_ma10):
+    """Accumulation/Distribution (5 نقاط): ميل خط A/D خلال آخر 10 أيام."""
+    if ad_slope_10d is None or vol_ma10 in (None, 0):
+        return 2.5  # محايد لو مفيش بيانات كافية
+    # تطبيع الميل بالنسبة لحجم التداول عشان يبقى قابل للمقارنة بين الأسهم
+    normalized_slope = ad_slope_10d / (vol_ma10 * 10)
+    if normalized_slope > 0.3: return 5.0
+    if normalized_slope > 0.1: return 3.5
+    if normalized_slope > -0.1: return 2.5
+    if normalized_slope > -0.3: return 1.0
+    return 0.0
+
+
+def _score_risk_reward(rr_ratio):
+    """Risk/Reward (10 نقاط)."""
+    if rr_ratio is None:
+        return 2.0  # محايد منخفض - مفيش هدف/وقف واضح يتحسب عليهم
+    if rr_ratio >= 3: return 10.0
+    if rr_ratio >= 2: return 8.0
+    if rr_ratio >= 1.5: return 6.0
+    if rr_ratio >= 1: return 4.0
+    return 1.0
+
+
+def _score_fundamentals(fund_score):
+    """Fundamentals (2 نقطة بس - وزن صغير مقصود لأن الأداة أساسها فني)."""
+    if fund_score is None:
+        return None
+    return round((fund_score / 100) * 2, 2)
+
+
+def _score_market_depth(depth_metrics):
+    """Market Depth (10 نقاط) - لو متاحة وسليمة بس، وإلا None (مش صفر)."""
+    if not depth_metrics:
+        return None
+    imb = depth_metrics.get("imbalance_%")
+    spread = depth_metrics.get("spread_%")
+    if imb is None:
+        return None
+    score = 5.0 + (imb / 100) * 5.0  # من صفر لـ10 حسب عدم التوازن (-100%..+100%)
+    score = max(min(score, 10.0), 0.0)
+    if spread is not None and spread > 1.0:  # Spread عالي = سيولة لحظية ضعيفة، بيقلل الثقة
+        score *= 0.7
+    return round(score, 1)
+
+
+def compute_eagle_score(components: dict):
+    """
+    بيجمع كل المكونات مع بعض. أي مكوّن قيمته None (زي Market Depth لو مش
+    متاح، أو Relative Strength لو فشل EGX30) **بيتشال من الحساب تماماً
+    وبيتشال وزنه من المجموع الكلي**، فالنتيجة النهائية بتفضل من 100 لكل
+    الأسهم المتاحة ليها نفس عدد المكونات - مفيش سهم بيتظلم لمجرد إن مصدر
+    بيانات اختياري (زي Market Depth) مش شغال له.
+    """
+    total_score = 0.0
+    total_possible = 0.0
+    available_components = {}
+    for key, weight in EAGLE_WEIGHTS.items():
+        value = components.get(key)
+        if value is None:
+            continue
+        total_score += value
+        total_possible += weight
+        available_components[key] = value
+
+    if total_possible <= 0:
+        return {"eagle_score": None, "components": available_components, "components_used": 0}
+
+    eagle_score_100 = round((total_score / total_possible) * 100, 1)
+    return {
+        "eagle_score": eagle_score_100,
+        "components": available_components,
+        "components_used": len(available_components),
+        "components_total": len(EAGLE_WEIGHTS),
+    }
+
+
+def determine_entry_quality(eagle_score, dist_to_resistance_pct, rr_ratio, depth_metrics, spread_threshold=1.0):
+    """
+    Entry Quality (قسم 10 من الخطة): BUY NOW / BUY ON PULLBACK /
+    WAIT FOR BREAKOUT / AVOID.
+    """
+    depth_confirms = depth_metrics is not None and (depth_metrics.get("imbalance_%") or 0) > 10
+    spread_ok = depth_metrics is None or (depth_metrics.get("spread_%") or 0) <= spread_threshold
+
+    if eagle_score is None:
+        return "⚪ غير محدد (بيانات غير كافية)"
+    if not spread_ok:
+        return "🔴 AVOID (Spread مرتفع - سيولة لحظية ضعيفة)"
+    if rr_ratio is not None and rr_ratio < 1:
+        return "🔴 AVOID (Risk/Reward ضعيف)"
+    if eagle_score >= 65 and dist_to_resistance_pct is not None and dist_to_resistance_pct > 5:
+        if depth_confirms or depth_metrics is None:
+            return "🟢 BUY NOW (قوة عالية + مفيش مقاومة قريبة)"
+    if eagle_score >= 65 and dist_to_resistance_pct is not None and 0 < dist_to_resistance_pct <= 5:
+        return "🟡 WAIT FOR BREAKOUT (قريب من مقاومة، محتاج اختراق مؤكد)"
+    if eagle_score >= 55:
+        return "🟡 BUY ON PULLBACK (السهم قوي بس السعر ممتد، استنى رجوع لدعم)"
+    if eagle_score < 40:
+        return "🔴 AVOID (قوة إجمالية ضعيفة)"
+    return "⚪ WAIT (مفيش إشارة واضحة كفاية)"
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -1111,7 +1820,7 @@ def fetch_fundamentals(ticker: str) -> dict:
         "eps": None, "book_value_per_share": None,
     }
     try:
-        info = yf.Ticker(resolve_symbol(ticker)).info
+        info = yf.Ticker(resolve_symbol(ticker), session=YF_SESSION).info
     except Exception:
         return empty
 
@@ -1281,13 +1990,18 @@ def score_fundamentals(f: dict) -> int:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_single_stock(ticker: str, period: str = "100d"):
+def fetch_single_stock(ticker: str, period: str = "1y"):
     """تحميل بيانات سهم واحد مع تخزين مؤقت (cache) لمدة 5 دقايق لتقليل الطلبات المكررة."""
-    return yf.download(resolve_symbol(ticker), period=period, progress=False, group_by='ticker')
+    if ticker.endswith(".CA"):
+        # مصر: TradingView بدل Yahoo (Yahoo متجمدة لأسهم مصر)
+        period_to_bars = {"1y": 260, "6mo": 130, "100d": 100, "60d": 60}
+        n_bars = period_to_bars.get(period, 260)
+        return fetch_egx_history_tv(ticker, n_bars=max(n_bars, 50))
+    return yf.download(resolve_symbol(ticker), period=period, progress=False, group_by='ticker', session=YF_SESSION)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
+def fetch_batch_data(tickers_tuple: tuple, period: str = "1y"):
     """
     يحمّل بيانات مجموعة أسهم على دفعات (batches) بدل طلب واحد ضخم لكل الأسهم،
     عشان نتفادى رفض Yahoo Finance للطلب أو فشله جزئياً لما يكون العدد كبير (230+ سهم).
@@ -1302,11 +2016,31 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
     all_frames = {}
     failed = []
 
+    # نفصل أسهم مصر (.CA) عن الباقي، لأن مصر بتتحمّل من TradingView مش Yahoo
+    egx_tickers = [t for t in tickers if t.endswith(".CA")]
+    other_tickers = [t for t in tickers if not t.endswith(".CA")]
+
+    # --- مصر: TradingView، سهم سهم (المكتبة مش بتدعم تحميل دفعات) ---
+    for t in egx_tickers:
+        try:
+            df_t = fetch_egx_history_tv(t, n_bars=260)
+            if df_t is not None and not df_t.dropna(how='all').empty:
+                all_frames[t] = df_t
+            else:
+                failed.append(t)
+        except Exception:
+            failed.append(t)
+        time.sleep(0.2)  # فاصل بسيط بين الطلبات عشان مانضغطش على TradingView
+
+    tickers = other_tickers
+
     for i in range(0, len(tickers), BATCH_SIZE):
         batch = tickers[i:i + BATCH_SIZE]
         resolved_batch = [resolve_symbol(t) for t in batch]
         try:
-            data = yf.download(resolved_batch, period=period, progress=False, group_by='ticker', threads=True)
+            # threads=False لأن جلسة curl_cffi المشتركة ممكن تحصل معاها مشاكل
+            # لو استخدمناها من كذا thread في نفس الوقت
+            data = yf.download(resolved_batch, period=period, progress=False, group_by='ticker', threads=False, session=YF_SESSION)
         except Exception:
             failed.extend(batch)
             continue
@@ -1331,7 +2065,7 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "60d"):
     if failed:
         for t in failed:
             try:
-                df_t = yf.download(resolve_symbol(t), period=period, progress=False, group_by='ticker')
+                df_t = yf.download(resolve_symbol(t), period=period, progress=False, group_by='ticker', session=YF_SESSION)
                 if df_t is not None and not df_t.dropna(how='all').empty:
                     all_frames[t] = df_t
                 else:
@@ -1383,8 +2117,9 @@ with st.sidebar.expander(f"⭐ المفضّلة ({len(watchlist)} سهم)"):
                 st.rerun()
     st.caption("💡 لاستخدام المفضّلة في المسح الشامل، انسخ الرموز فوق والصقها في قائمة الأسهم بتاب المسح.")
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "🔍 فحص سهم تفصيلي + رسم بياني", "🏆 مسح وترتيب السوق الاحترافي", "💼 محفظتي",
+    "🌍 الأسواق العالمية + الذهب/الفضة",
 ])
 
 with tab1:
@@ -1406,7 +2141,7 @@ with tab1:
     if st.button("تحليل السهم ورسم المنحنى ⚡"):
         with st.spinner("جاري جلب البيانات..."):
             try:
-                df = fetch_single_stock(ticker_input, period="100d")
+                df = fetch_single_stock(ticker_input, period="1y")
                 if not df.empty:
                     df = calculate_indicators(df)
                     last_row = df.iloc[-1]
@@ -1451,34 +2186,167 @@ with tab1:
                     c3.metric("مؤشر السيولة MFI", f"{mfi:.1f}")
                     c4.metric("حجم تداول اليوم (فوليوم)", f"{vol:,.0f}")
 
-                    # سعر بيع مستهدف (تقني) = النطاق العلوي لبولينجر باندز - لو
-                    # السعر فوقه فعلاً، السهم متشبع شرائياً ومفيش هامش صعود واضح
-                    if upper > price:
+                    # --- المؤشرات الجديدة: ATR + ADX + قرب 52 أسبوع + تقلب + أيام صعود متتالية ---
+                    atr_pct = float(last_row['ATR_%'].squeeze())
+                    adx_val = float(last_row['ADX_14'].squeeze())
+                    dist_high_52w = float(last_row['Dist_From_52W_High_%'].squeeze())
+                    dist_low_52w = float(last_row['Dist_From_52W_Low_%'].squeeze())
+                    daily_vol_pct = float(last_row['Daily_Volatility_%'].squeeze())
+                    up_streak = int(last_row['Consecutive_Up_Days'].squeeze())
+
+                    d1, d2, d3, d4 = st.columns(4)
+                    d1.metric("ATR (تقلب %)", f"{atr_pct:.2f}%")
+                    trend_strength = "قوي 💪" if adx_val >= 25 else ("متوسط" if adx_val >= 15 else "ضعيف/عرضي")
+                    d2.metric("ADX (قوة الاتجاه)", f"{adx_val:.1f}", trend_strength)
+                    d3.metric("المسافة من قمة 52 أسبوع", f"{dist_high_52w:.1f}%")
+                    d4.metric("المسافة من قاع 52 أسبوع", f"+{dist_low_52w:.1f}%")
+
+                    e1, e2 = st.columns(2)
+                    e1.metric("التقلب اليومي (14 يوم)", f"{daily_vol_pct:.2f}%")
+                    e2.metric("أيام الصعود المتتالية", f"{up_streak} يوم" if up_streak > 0 else "مفيش (آخر يوم كان هابط/ثابت)")
+
+                    # --- تصنيف السهم حسب نفس الأقسام الأربعة بتاعة المسح الشامل ---
+                    # (نفس الشرط بالظبط المستخدم في "مسح وترتيب السوق الاحترافي"،
+                    # عشان أي سهم تشوفه هنا يبقى نفس تصنيفه هناك بالظبط)
+                    vol_ma10 = float(last_row['Vol_MA10'].squeeze())
+                    if is_new_cross and rsi < 52:
+                        section_label = "🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم'"
+                        section_color = "#1abc9c"
+                    elif rsi < 35 and mfi < 35:
+                        section_label = "📥 ثانياً: رادار تصيد القيعان"
+                        section_color = "#3498db"
+                    elif ema9 > ema21:
+                        if vol > (vol_ma10 * 1.15) and 50 <= rsi <= 78:
+                            section_label = "⚡ ثالثاً: أسهم المضاربة اللحظية واليومية"
+                            section_color = "#e67e22"
+                        else:
+                            section_label = "📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر"
+                            section_color = "#2ecc71"
+                    else:
+                        section_label = None
+
+                    if section_label:
+                        st.markdown(
+                            f'<div style="background-color:{section_color}; padding:14px; '
+                            f'border-radius:8px; text-align:center; margin-bottom:16px;">'
+                            f'<span style="color:white; font-size:16px;">📍 لو عملت مسح شامل دلوقتي، '
+                            f'السهم ده هيظهر في قسم: <b>{section_label}</b></span></div>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.caption(
+                            "📍 السهم ده حالياً **مش هيظهر في أي قسم من الأربعة** لو عملت مسح شامل "
+                            "(المؤشرات الحالية مش مطابقة لشروط أي قسم)."
+                        )
+
+                    # --- RVOL (حجم نسبي) مربوط باتجاه السعر ---
+                    rvol_t1 = float(last_row['RVOL'].squeeze())
+                    yesterday_close_t1 = float(df['Close'].iloc[-2]) if len(df) >= 2 else price
+                    if rvol_t1 >= 1.5 and price > yesterday_close_t1:
+                        st.success(f"🟢 حجم تداول اليوم قوي نسبياً: **{rvol_t1:.1f}x** المتوسط، ومترافق مع صعود السعر (إشارة إيجابية).")
+                    elif rvol_t1 >= 1.5 and price <= yesterday_close_t1:
+                        st.warning(f"🔴 حجم تداول اليوم قوي نسبياً: **{rvol_t1:.1f}x** المتوسط، بس مترافق مع هبوط السعر (ممكن يكون تصريف).")
+                    else:
+                        st.caption(f"الحجم النسبي (RVOL) اليوم: {rvol_t1:.1f}x المتوسط (عادي).")
+
+                    # --- محرك الدعم/المقاومة ---
+                    nearest_support_t1, nearest_resistance_t1 = find_support_resistance(df)
+                    atr_14_t1 = float(last_row['ATR_14'].squeeze())
+
+                    # هدف الربح: أقرب مقاومة، وإلا بولينجر العلوي كبديل
+                    if nearest_resistance_t1 is not None:
+                        target_sell_price = round(nearest_resistance_t1, 2)
+                        target_sell_upside = round((target_sell_price / price - 1) * 100, 1)
+                        st.info(
+                            f"🎯 هدف ربح مقترح (أقرب مقاومة): **{target_sell_price} {price_currency}** "
+                            f"(+{target_sell_upside}% عن السعر الحالي)."
+                        )
+                    elif upper > price:
                         target_sell_price = round(upper, 2)
                         target_sell_upside = round((target_sell_price / price - 1) * 100, 1)
                         st.info(
                             f"🎯 سعر بيع مستهدف (تقني): **{target_sell_price} {price_currency}** "
-                            f"(+{target_sell_upside}% عن السعر الحالي) - النطاق العلوي لبولينجر باندز."
+                            f"(+{target_sell_upside}% عن السعر الحالي) - مفيش مقاومة واضحة قريبة، فاستخدمنا النطاق العلوي لبولينجر باندز."
                         )
                     else:
+                        target_sell_price = None
                         st.warning(
-                            "🎯 السعر الحالي **فوق** النطاق العلوي لبولينجر باندز فعلاً - "
+                            "🎯 السعر الحالي **فوق** النطاق العلوي لبولينجر باندز فعلاً ومفيش مقاومة واضحة قريبة - "
                             "السهم متشبع شرائياً ومفيش هامش صعود فني واضح متبقي دلوقتي."
                         )
 
-                    # وقف خسارة مقترح (تقني) = النطاق السفلي لبولينجر باندز
-                    stop_loss_price = round(lower, 2)
+                    # وقف خسارة: أقرب دعم لو معقول (بين 0.5×ATR و8% تحت السعر
+                    # - مش قريب أوي عشان مايتكسرش بأول تذبذب عادي، ومش بعيد أوي
+                    # برضو)، وإلا وقف مبني على ATR
+                    min_stop_distance_t1 = max(0.5 * atr_14_t1, price * 0.01)  # على الأقل 1% أو نص ATR
+                    support_distance_t1 = (price - nearest_support_t1) if nearest_support_t1 is not None else 0
+                    if (nearest_support_t1 is not None
+                            and min_stop_distance_t1 <= support_distance_t1 <= price * 0.08):
+                        stop_loss_price = round(nearest_support_t1, 2)
+                        sl_basis_t1 = "أقرب دعم"
+                    else:
+                        stop_loss_price = round(max(price - 1.5 * atr_14_t1, price * 0.9), 2)
+                        sl_basis_t1 = "مبني على ATR (الدعم إما بعيد جداً أو قريب جداً من السعر)"
                     stop_loss_downside = round((stop_loss_price / price - 1) * 100, 1)
-                    if price < lower:
+                    if price < stop_loss_price:
                         st.error(
-                            f"🛑 السعر الحالي **كسر بالفعل** وقف الخسارة التقني "
+                            f"🛑 السعر الحالي **كسر بالفعل** وقف الخسارة المقترح "
                             f"({stop_loss_price} {price_currency}) - إشارة خطر، مش مجرد مستوى مستقبلي."
                         )
                     else:
                         st.info(
-                            f"🛑 وقف خسارة مقترح (تقني): **{stop_loss_price} {price_currency}** "
-                            f"({stop_loss_downside}% عن السعر الحالي) - النطاق السفلي لبولينجر باندز."
+                            f"🛑 وقف خسارة مقترح ({sl_basis_t1}): **{stop_loss_price} {price_currency}** "
+                            f"({stop_loss_downside}% عن السعر الحالي)."
                         )
+
+                    # Risk/Reward
+                    risk_amount_t1 = price - stop_loss_price
+                    reward_amount_t1 = (target_sell_price - price) if target_sell_price else None
+                    if risk_amount_t1 > 0 and reward_amount_t1 is not None and reward_amount_t1 > 0:
+                        rr_ratio_t1 = round(reward_amount_t1 / risk_amount_t1, 2)
+                        rr_quality = "ممتازة 🌟" if rr_ratio_t1 >= 2 else ("مقبولة" if rr_ratio_t1 >= 1 else "ضعيفة ⚠️")
+                        st.metric("نسبة Risk/Reward", f"{rr_ratio_t1}", rr_quality)
+                    else:
+                        st.caption("Risk/Reward: مش متاحة حالياً (محتاجين هدف ربح ووقف خسارة صالحين).")
+
+                    # --- عمق السوق (Market Depth / Level 2) - معلوماتي بس حالياً، لسه مش داخل في القرار ---
+                    if ticker_input.endswith(".CA"):
+                        st.markdown("##### 📊 عمق السوق (Level 2) - لوحة المراقبة")
+                        if not get_egxapi_key():
+                            st.caption(
+                                "⚪ عمق السوق مش متصل لسه - محتاجين مفتاح EGXAPI. "
+                                "الأداة شغالة عادي بالتحليل الفني من غير الميزة دي."
+                            )
+                        else:
+                            bare_sym = ticker_input[:-3]
+                            depth, depth_reason = get_market_depth(bare_sym)
+                            if depth is None:
+                                st.warning(f"⚪ Market Depth unavailable - {depth_reason}")
+                                st.caption("مفيش قيم اتحطت بالصفر أو اتخمّنت - السهم هيتقيّم بس على المؤشرات الفنية الموثوقة زي العادة.")
+                            else:
+                                mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+                                mcol1.metric("أفضل سعر شراء/بيع", f"{depth['best_bid']:.2f} / {depth['best_ask']:.2f}")
+                                mcol2.metric("الفارق (Spread)", f"{depth['spread_%']:.2f}%" if depth['spread_%'] is not None else "-")
+                                imb = depth.get('imbalance_%')
+                                imb_label = None
+                                if imb is not None:
+                                    imb_label = "ضغط شراء" if imb > 10 else ("ضغط بيع" if imb < -10 else "متوازن")
+                                mcol3.metric("عدم توازن العمق (10 مستويات)", f"{imb:+.1f}%" if imb is not None else "-", imb_label)
+                                age = depth.get('data_age_sec')
+                                mcol4.metric("عمر البيانات", f"{age:.0f} ثانية" if age is not None else "-")
+
+                                ncol1, ncol2, ncol3 = st.columns(3)
+                                ncol1.metric("Depth 5 (Bid/Ask)", f"{depth['bid_depth_5']:,.0f} / {depth['ask_depth_5']:,.0f}")
+                                ncol2.metric("Depth 10 (Bid/Ask)", f"{depth['bid_depth_10']:,.0f} / {depth['ask_depth_10']:,.0f}")
+                                ncol3.metric("المصدر", depth.get("source", "-"))
+
+                                momentum = depth.get("depth_momentum", {})
+                                if momentum.get("trend"):
+                                    st.caption(f"**اتجاه العمق (Depth Momentum):** {momentum['trend']}")
+                                    if momentum.get("stability") is not None:
+                                        st.caption(f"استقرار القراءات (كل ما رقم أقل كل ما أثبت): {momentum['stability']}")
+
+                                st.caption("⚠️ عمق سوق قوي مش ضمان لصعود السعر - ده مؤشر إضافي بس، لسه مش داخل في درجة السهم أو التوصية (لسه محتاج Backtest قبل كده).")
 
                     source_labels = {
                         "manual": "✍️ سعر يدوي (إنت أدخلته)",
@@ -1612,18 +2480,68 @@ with tab2:
             default=[],
         )
 
+    st.markdown("##### 🧪 فلاتر متقدمة إضافية (اختياري - سيبها زي ما هي لو مش عايز تفلتر بيها)")
+    gcol1, gcol2, gcol3 = st.columns(3)
+    with gcol1:
+        min_adx_scan = st.number_input(
+            "الحد الأدنى لـ ADX (قوة الاتجاه) - 0 يعني بدون فلتر",
+            min_value=0, max_value=100, value=0, step=5,
+            help="ADX فوق 25 يعني اتجاه قوي وواضح، تحت 15 يعني السهم بيتحرك عرضي/عشوائي.",
+        )
+    with gcol2:
+        min_volatility_scan, max_volatility_scan = st.slider(
+            "نطاق التقلب اليومي % (14 يوم)",
+            min_value=0.0, max_value=20.0, value=(0.0, 20.0), step=0.5,
+            help="استبعد الأسهم الهادية جداً أو العنيفة جداً حسب النطاق اللي تحدده.",
+        )
+    with gcol3:
+        min_up_streak_scan = st.number_input(
+            "أقل عدد أيام صعود متتالية - 0 يعني بدون فلتر",
+            min_value=0, max_value=20, value=0, step=1,
+        )
+
+    gcol4, gcol5 = st.columns(2)
+    with gcol4:
+        min_rvol_scan = st.number_input(
+            "أقل RVOL (حجم نسبي) - 0 يعني بدون فلتر",
+            min_value=0.0, max_value=10.0, value=0.0, step=0.5,
+            help="RVOL = فوليوم اليوم ÷ متوسط فوليوم 20 يوم. 1.5 يعني فوليوم اليوم أعلى بـ50% من المعتاد.",
+        )
+    with gcol5:
+        min_rr_scan = st.number_input(
+            "أقل نسبة Risk/Reward - 0 يعني بدون فلتر",
+            min_value=0.0, max_value=10.0, value=0.0, step=0.5,
+            help="Risk/Reward = المكسب المحتمل (للهدف) ÷ الخسارة المحتملة (لوقف الخسارة). 2 يعني المكسب المتوقع ضعف المخاطرة.",
+        )
+
+    CATEGORY_OPTIONS = {
+        "fresh": "🚀 أولاً: تأسيس مركز جديدة (قاع صاعد طازة)",
+        "bottom": "📥 ثانياً: رادار تصيد القيعان",
+        "short_term": "⚡ ثالثاً: مضاربة لحظية ويومية",
+        "long_term": "📈 رابعاً: استثمار واتجاه صاعد مستقر",
+    }
+    selected_categories_scan = st.multiselect(
+        "🗂️ عايز تشوف أي الأقسام بس؟ (سيبها فاضية أو اختار الكل لعرض الأربعة زي المعتاد)",
+        options=list(CATEGORY_OPTIONS.keys()),
+        format_func=lambda k: CATEGORY_OPTIONS[k],
+        default=list(CATEGORY_OPTIONS.keys()),
+    )
+
     if st.button("تشغيل الفرز والترتيب الاحترافي اللحظي 🚀"):
         fresh_cross_results = []
         bottom_accumulation_results = []
         short_term_trading = []
         long_term_investment = []
-        
+        eagle_raw = {}  # ticker -> ingredients لازمة لحساب Relative/Sector Strength بعد ما المسح يخلص
+
+        egx30_change_20d = fetch_egx30_change_20d()
+
         progress_bar = st.progress(0)
         total_stocks = len(scan_stocks)
         
         with st.spinner(f"جاري مسح {len(scan_stocks)} سهم على دفعات ({BATCH_SIZE} سهم لكل دفعة) + إعادة محاولة الأسهم اللي تفشل..."):
             tickers_list = list(scan_stocks.values())
-            all_data, failed_tickers = fetch_batch_data(tuple(tickers_list), period="60d")
+            all_data, failed_tickers = fetch_batch_data(tuple(tickers_list), period="1y")
 
             if failed_tickers:
                 st.warning(
@@ -1634,7 +2552,6 @@ with tab2:
 
             skipped_count = 0
             skipped_names = []
-            benchmark_cache = {}
             for idx, (name, ticker) in enumerate(scan_stocks.items()):
                 progress_bar.progress((idx + 1) / total_stocks)
                 if ticker not in all_data:
@@ -1678,37 +2595,19 @@ with tab2:
                     if selected_indices_scan and get_egx_index(ticker) not in selected_indices_scan:
                         continue
 
-                    # القرب من أعلى/أقل سعر خلال الفترة المتاحة (60 يوم هنا،
-                    # مش سنة كاملة - سمّيناها "period" مش "52w" عشان الدقة)
-                    period_high = float(stock_df['Close'].max())
-                    period_low = float(stock_df['Close'].min())
-                    pct_from_period_high = round((p / period_high - 1) * 100, 1)
-                    pct_from_period_low = round((p / period_low - 1) * 100, 1)
+                    atr_pct = float(row['ATR_%']) if pd.notna(row['ATR_%']) else 0.0
+                    adx_val = float(row['ADX_14']) if pd.notna(row['ADX_14']) else 0.0
+                    dist_high_52w = float(row['Dist_From_52W_High_%']) if pd.notna(row['Dist_From_52W_High_%']) else 0.0
+                    dist_low_52w = float(row['Dist_From_52W_Low_%']) if pd.notna(row['Dist_From_52W_Low_%']) else 0.0
+                    daily_vol_pct = float(row['Daily_Volatility_%']) if pd.notna(row['Daily_Volatility_%']) else 0.0
+                    up_streak = int(row['Consecutive_Up_Days']) if pd.notna(row['Consecutive_Up_Days']) else 0
 
-                    # القوة النسبية مقابل المؤشر المرجعي لنفس السوق ولنفس الفترة
-                    market_key = get_market_key(ticker)
-                    stock_ret_period = round((p / float(stock_df['Close'].iloc[0]) - 1) * 100, 1)
-                    benchmark_ret_period = fetch_benchmark_return(market_key, benchmark_cache) if market_key else None
-                    relative_strength = (
-                        round(stock_ret_period - benchmark_ret_period, 1)
-                        if benchmark_ret_period is not None else None
-                    )
-
-                    # نسبة التقلب المئوية داخل نفس الفترة المتاحة
-                    daily_ret_scan = stock_df['Close'].pct_change().dropna()
-                    rolling_vol_scan = (daily_ret_scan.rolling(20).std() * (252 ** 0.5) * 100).dropna()
-                    if len(rolling_vol_scan) >= 10:
-                        volatility_percentile = round((rolling_vol_scan < rolling_vol_scan.iloc[-1]).mean() * 100, 1)
-                    else:
-                        volatility_percentile = None
-
-                    # اتجاه الفوليوم + علم تعويم رقيق
-                    vol_ma5_scan = float(stock_df['Volume'].rolling(5).mean().iloc[-1])
-                    volume_trend = round((vol_ma5_scan / vol_ma10 - 1) * 100, 1) if vol_ma10 > 0 else None
-                    thin_float_risk = (
-                        avg_trade_value < min_liquidity_value_scan
-                        and volatility_percentile is not None and volatility_percentile >= 80
-                    )
+                    if min_adx_scan > 0 and adx_val < min_adx_scan:
+                        continue
+                    if daily_vol_pct < min_volatility_scan or daily_vol_pct > max_volatility_scan:
+                        continue
+                    if min_up_streak_scan > 0 and up_streak < min_up_streak_scan:
+                        continue
 
                     is_new_cross = (prev_row['EMA9'] <= prev_row['EMA21']) and (e9 > e21)
                     
@@ -1733,19 +2632,90 @@ with tab2:
                     
                     currency = get_currency(ticker)
 
-                    # سعر بيع مستهدف (تقني) = النطاق العلوي لبولينجر باندز - None
-                    # لو السعر فوقه فعلاً (متشبع شرائياً، مفيش هامش صعود واضح)
-                    if u > p:
+                    # --- RVOL (الحجم النسبي) مربوط باتجاه السعر ---
+                    rvol = float(row['RVOL']) if pd.notna(row['RVOL']) else 1.0
+                    yesterday_close = float(stock_df['Close'].iloc[-2]) if len(stock_df) >= 2 else p
+                    price_up_today = p > yesterday_close
+                    if rvol >= 1.5 and price_up_today:
+                        rvol_signal = f"🟢 {rvol:.1f}x (صعود بحجم قوي)"
+                    elif rvol >= 1.5 and not price_up_today:
+                        rvol_signal = f"🔴 {rvol:.1f}x (هبوط بحجم قوي - تصريف محتمل)"
+                    else:
+                        rvol_signal = f"عادي ({rvol:.1f}x)"
+
+                    if min_rvol_scan > 0 and rvol < min_rvol_scan:
+                        continue
+
+                    # --- محرك الدعم/المقاومة ---
+                    nearest_support, nearest_resistance = find_support_resistance(stock_df)
+                    atr_14_val = float(row['ATR_14']) if pd.notna(row['ATR_14']) else 0.0
+
+                    # وقف خسارة: أقرب دعم لو معقول (بين 0.5×ATR و8% تحت السعر -
+                    # مش قريب أوي عشان مايتكسرش بأول تذبذب عادي)، وإلا ATR
+                    min_stop_distance = max(0.5 * atr_14_val, p * 0.01)  # على الأقل 1% أو نص ATR
+                    support_distance = (p - nearest_support) if nearest_support is not None else 0
+                    if nearest_support is not None and min_stop_distance <= support_distance <= p * 0.08:
+                        stop_loss_price = round(nearest_support, 2)
+                        sl_basis = "أقرب دعم"
+                    else:
+                        stop_loss_price = round(max(p - 1.5 * atr_14_val, p * 0.9), 2)
+                        sl_basis = "ATR"
+                    stop_loss_downside = round((stop_loss_price / p - 1) * 100, 1)
+                    stop_loss_broken = p < stop_loss_price
+
+                    # هدف الربح: أقرب مقاومة، وإلا النطاق العلوي لبولينجر باندز كبديل
+                    if nearest_resistance is not None:
+                        target_sell_price = round(nearest_resistance, 2)
+                        target_basis = "أقرب مقاومة"
+                    elif u > p:
                         target_sell_price = round(u, 2)
-                        target_sell_upside = round((target_sell_price / p - 1) * 100, 1)
+                        target_basis = "بولينجر العلوي"
                     else:
                         target_sell_price = None
-                        target_sell_upside = None
+                        target_basis = None
+                    target_sell_upside = round((target_sell_price / p - 1) * 100, 1) if target_sell_price else None
 
-                    # وقف خسارة مقترح (تقني) = النطاق السفلي لبولينجر باندز
-                    stop_loss_price = round(l, 2)
-                    stop_loss_downside = round((stop_loss_price / p - 1) * 100, 1)
-                    stop_loss_broken = p < l
+                    # Risk/Reward = المكسب المحتمل ÷ الخسارة المحتملة
+                    risk_amount = p - stop_loss_price
+                    reward_amount = (target_sell_price - p) if target_sell_price else None
+                    if risk_amount > 0 and reward_amount is not None and reward_amount > 0:
+                        rr_ratio = round(reward_amount / risk_amount, 2)
+                    else:
+                        rr_ratio = None
+
+                    if min_rr_scan > 0 and (rr_ratio is None or rr_ratio < min_rr_scan):
+                        continue
+
+                    # --- مكوّنات Eagle Score (اللي ممكن تتحسب دلوقتي من غير الحاجة لبيانات
+                    # أسهم تانية - Relative/Sector Strength بيتحسبوا بعد ما المسح يخلص) ---
+                    ad_slope_10d = float(row['AD_Line_Slope_10d']) if pd.notna(row.get('AD_Line_Slope_10d', np.nan)) else None
+                    price_change_20d = None
+                    if len(stock_df) >= 21:
+                        base_price_20d = float(stock_df['Close'].iloc[-21])
+                        if base_price_20d > 0:
+                            price_change_20d = (p / base_price_20d - 1) * 100
+
+                    dist_to_resistance_pct = ((nearest_resistance - p) / p * 100) if nearest_resistance else None
+
+                    depth_metrics_for_score = None
+                    if ticker.endswith(".CA") and get_egxapi_key():
+                        depth_metrics_for_score, _ = get_market_depth(ticker[:-3])
+
+                    eagle_components = {
+                        "trend": _score_trend(e9, e21, adx_val, p),
+                        "momentum": _score_momentum(r, m, u, l, p),
+                        "volume_rvol": _score_volume_rvol(rvol, price_up_today),
+                        "liquidity": _score_liquidity(avg_trade_value),
+                        "price_structure": _score_price_structure(p, nearest_support, nearest_resistance, dist_low_52w, dist_high_52w),
+                        "breakout": _score_breakout(p, nearest_resistance, rvol, price_up_today),
+                        "accumulation_distribution": _score_accumulation_distribution(ad_slope_10d, vol_ma10),
+                        "risk_reward": _score_risk_reward(rr_ratio),
+                        "market_depth": _score_market_depth(depth_metrics_for_score),
+                        # دول محتاجين بيانات كل الأسهم اللي اتمسحت - بيتحسبوا بعد الحلقة
+                        "relative_strength": None,
+                        "sector_strength": None,
+                        "fundamentals": None,  # بيتحط لو include_fundamentals_scan شغال (تحت)
+                    }
 
                     data_entry = {
                         "النقاط الفنية والسيولة (من 100)": round(momentum_score, 1),
@@ -1757,20 +2727,26 @@ with tab2:
                         "السعر الحالي": round(p, 2),
                         "سعر بيع مستهدف (تقني)": target_sell_price,
                         "فرق السعر المستهدف %": target_sell_upside,
+                        "أساس الهدف": target_basis,
                         "وقف خسارة مقترح": stop_loss_price,
                         "فرق وقف الخسارة %": stop_loss_downside,
+                        "أساس وقف الخسارة": sl_basis,
                         "وقف الخسارة مكسور؟": stop_loss_broken,
-                        "القرب من أعلى سعر بالفترة %": pct_from_period_high,
-                        "القرب من أقل سعر بالفترة %": pct_from_period_low,
-                        "القوة النسبية مقابل المؤشر %": relative_strength,
-                        "نسبة التقلب المئوية": volatility_percentile,
-                        "اتجاه الفوليوم %": volume_trend,
-                        "تحذير تعويم رقيق": thin_float_risk,
+                        "Risk/Reward": rr_ratio,
                         "مؤشر الزخم RSI": round(r, 1),
                         "مؤشر السيولة MFI": round(m, 1),
                         "فوليوم اليوم": f"{vol_today:,.0f}",
                         "متوسط فوليوم 10أيام": f"{vol_ma10:,.0f}",
                         "متوسط قيمة التداول (تقريبي)": f"{avg_trade_value:,.0f}",
+                        "الحجم النسبي RVOL": rvol_signal,
+                        "أقرب دعم": round(nearest_support, 2) if nearest_support else None,
+                        "أقرب مقاومة": round(nearest_resistance, 2) if nearest_resistance else None,
+                        "ATR (تقلب %)": round(atr_pct, 2),
+                        "ADX (قوة الاتجاه)": round(adx_val, 1),
+                        "بعد عن قمة 52 أسبوع %": round(dist_high_52w, 1),
+                        "بعد عن قاع 52 أسبوع %": round(dist_low_52w, 1),
+                        "التقلب اليومي %": round(daily_vol_pct, 2),
+                        "أيام صعود متتالية": up_streak,
                         "التقييم الفني": status
                     }
 
@@ -1795,6 +2771,7 @@ with tab2:
                         data_entry["رقم جراهام"] = graham["graham_number"]
                         data_entry["فرق جراهام %"] = graham["graham_upside_%"]
                         data_entry["تحت السعر العادل؟"] = graham["undervalued_per_graham"]
+                        eagle_components["fundamentals"] = _score_fundamentals(fund_score)
 
                     verdict = compute_verdict(
                         momentum_score, fund_score_for_verdict,
@@ -1802,27 +2779,73 @@ with tab2:
                         fundamentals_fetched=fundamentals_fetched,
                     )
                     data_entry.update(verdict)
-                    
+
+                    # بنسجّل كل حاجة لازمة لحساب Relative/Sector Strength بعد ما
+                    # المسح كله يخلص (لسه ناقصين متوسط السوق ومتوسط القطاع)
+                    eagle_raw[ticker] = {
+                        "data_entry": data_entry,
+                        "components": eagle_components,
+                        "sector": sector,
+                        "price_change_20d": price_change_20d,
+                        "dist_to_resistance_pct": dist_to_resistance_pct,
+                        "rr_ratio": rr_ratio,
+                        "depth_metrics": depth_metrics_for_score,
+                    }
+
                     if is_new_cross and r < 52:
                         data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد طازة)"
-                        fresh_cross_results.append(data_entry)
-                    
+                        if "fresh" in selected_categories_scan:
+                            fresh_cross_results.append(data_entry)
+
                     elif r < 35 and m < 35:
                         data_entry["التقييم الفني"] = "🛒 قاع تجميع (فرصة مراقبة صامتة)"
-                        bottom_accumulation_results.append(data_entry)
-                    
+                        if "bottom" in selected_categories_scan:
+                            bottom_accumulation_results.append(data_entry)
+
                     elif e9 > e21:
                         if vol_today > (vol_ma10 * 1.15) and 50 <= r <= 78:
                             data_entry["التقييم الفني"] = f"{status} [مضاربة لحظية]"
-                            short_term_trading.append(data_entry)
+                            if "short_term" in selected_categories_scan:
+                                short_term_trading.append(data_entry)
                         else:
                             data_entry["التقييم الفني"] = f"{status} [استثمار مستقر]"
-                            long_term_investment.append(data_entry)
+                            if "long_term" in selected_categories_scan:
+                                long_term_investment.append(data_entry)
                 except Exception as e:
                     skipped_count += 1
                     skipped_names.append((name, ticker, f"خطأ أثناء التحليل: {e}"))
                     continue
-            
+
+            # --- استكمال Eagle Score: Relative Strength + Sector Strength ---
+            # دول محتاجين بيانات كل الأسهم اللي اتمسحت مع بعض، فبيتحسبوا هنا
+            # بعد ما الحلقة خلصت خالص، وبعدين بنحدّث كل data_entry في مكانها
+            if eagle_raw:
+                sector_changes = {}
+                all_changes = []
+                for info in eagle_raw.values():
+                    if info["price_change_20d"] is not None:
+                        sector_changes.setdefault(info["sector"], []).append(info["price_change_20d"])
+                        all_changes.append(info["price_change_20d"])
+                overall_avg_change = (sum(all_changes) / len(all_changes)) if all_changes else None
+                sector_avg_change = {
+                    sec: (sum(vals) / len(vals)) for sec, vals in sector_changes.items()
+                }
+
+                for ticker, info in eagle_raw.items():
+                    comps = info["components"]
+                    comps["relative_strength"] = _score_relative_strength(info["price_change_20d"], egx30_change_20d)
+                    comps["sector_strength"] = _score_sector_strength(
+                        sector_avg_change.get(info["sector"]), overall_avg_change
+                    )
+                    eagle_result = compute_eagle_score(comps)
+                    entry_quality = determine_entry_quality(
+                        eagle_result["eagle_score"], info["dist_to_resistance_pct"],
+                        info["rr_ratio"], info["depth_metrics"],
+                    )
+                    info["data_entry"]["🦅 Eagle Score (100)"] = eagle_result["eagle_score"]
+                    info["data_entry"]["مكوّنات متاحة"] = f"{eagle_result['components_used']}/{eagle_result['components_total']}"
+                    info["data_entry"]["Entry Quality"] = entry_quality
+
             if skipped_count:
                 st.info(f"ℹ️ تم تخطي {skipped_count} سهم أثناء التحليل (بيانات ناقصة أو تعذر حساب المؤشرات).")
                 with st.expander(f"📋 عرض تفاصيل الـ {skipped_count} سهم اللي اتخطاها"):
@@ -1867,40 +2890,53 @@ with tab2:
                     st.sidebar.error(tg_status_msg)
             
             # عرض الجداول على الشاشة
-            st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
-            if fresh_cross_results:
-                st.dataframe(pd.DataFrame(fresh_cross_results).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False), use_container_width=True)
-            else:
-                st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم واستوفت شروط الفوليوم الحقيقي.")
-                
-            st.write("---")
-            
-            st.markdown("### 📥 ثانياً: رادار تصيد القيعان (أسهم رخيصة جداً في مناطق تجميع الحيتان 🐋)")
-            if bottom_accumulation_results:
-                st.dataframe(pd.DataFrame(bottom_accumulation_results).sort_values(by="مؤشر الزخم RSI", ascending=True), use_container_width=True)
-            else:
-                st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد تحت 35 تنطبق عليها شروط الفوليوم الأمان.")
-                
-            st.write("---")
-            
-            st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية (سيولة ضخمة وعزم سريع محمي من التضخم)")
-            if short_term_trading:
-                st.dataframe(pd.DataFrame(short_term_trading).sort_values(by="فوليوم اليوم", ascending=False), use_container_width=True)
-            else:
-                st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة والآمنة حالياً.")
+            EAGLE_COL = "🦅 Eagle Score (100)"
 
-            st.write("---")
-            
-            st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر (طويل الأجل وآمن)")
-            if long_term_investment:
-                lt_df = pd.DataFrame(long_term_investment)
-                sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة (من 100)"
-                st.dataframe(lt_df.sort_values(by=sort_col, ascending=False), use_container_width=True)
-                if include_fundamentals_scan:
-                    st.caption(
-                        "💡 مرتبة حسب 'الدرجة الشاملة' = 60% فني + 40% مالي. "
-                        "لو عمود مكرر الربحية P/E فاضي لسهم معين، يبقى Yahoo مارجعش بيانات مالية له."
-                    )
+            if "fresh" in selected_categories_scan:
+                st.markdown("### 🚀 أولاً: أسهم لقطت 'إشارة تأسيس مركز جديدة اليوم' (آمنة وصارمة، RSI < 52)")
+                if fresh_cross_results:
+                    _df = pd.DataFrame(fresh_cross_results)
+                    _sort = EAGLE_COL if EAGLE_COL in _df.columns else "النقاط الفنية والسيولة (من 100)"
+                    st.dataframe(_df.sort_values(by=_sort, ascending=False), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم لقطت تقاطع ذهبي هادئ اليوم واستوفت شروط الفوليوم الحقيقي.")
+                st.write("---")
+
+            if "bottom" in selected_categories_scan:
+                st.markdown("### 📥 ثانياً: رادار تصيد القيعان (أسهم رخيصة جداً في مناطق تجميع الحيتان 🐋)")
+                if bottom_accumulation_results:
+                    _df = pd.DataFrame(bottom_accumulation_results)
+                    _sort = EAGLE_COL if EAGLE_COL in _df.columns else "مؤشر الزخم RSI"
+                    _asc = False if _sort == EAGLE_COL else True
+                    st.dataframe(_df.sort_values(by=_sort, ascending=_asc), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم حالياً في قيعان التشبع البيعي الحاد تحت 35 تنطبق عليها شروط الفوليوم الأمان.")
+                st.write("---")
+
+            if "short_term" in selected_categories_scan:
+                st.markdown("### ⚡ ثالثاً: أسهم المضاربة اللحظية واليومية (سيولة ضخمة وعزم سريع محمي من التضخم)")
+                if short_term_trading:
+                    _df = pd.DataFrame(short_term_trading)
+                    _sort = EAGLE_COL if EAGLE_COL in _df.columns else "فوليوم اليوم"
+                    st.dataframe(_df.sort_values(by=_sort, ascending=False), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم مستوفية لشروط الحركات المضاربية النشطة والآمنة حالياً.")
+                st.write("---")
+
+            if "long_term" in selected_categories_scan:
+                st.markdown("### 📈 رابعاً: أسهم الاستثمار والاتجاه الصاعد المستقر (طويل الأجل وآمن)")
+                if long_term_investment:
+                    lt_df = pd.DataFrame(long_term_investment)
+                    if EAGLE_COL in lt_df.columns:
+                        sort_col = EAGLE_COL
+                    else:
+                        sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in lt_df.columns else "النقاط الفنية والسيولة (من 100)"
+                    st.dataframe(lt_df.sort_values(by=sort_col, ascending=False), use_container_width=True)
+                    if include_fundamentals_scan:
+                        st.caption(
+                            "💡 مرتبة حسب 'الدرجة الشاملة' = 60% فني + 40% مالي. "
+                            "لو عمود مكرر الربحية P/E فاضي لسهم معين، يبقى Yahoo مارجعش بيانات مالية له."
+                        )
 
             # --- الملخص الشامل: التوصية النهائية (فني + مالي مع بعض) عبر كل الفئات ---
             st.markdown("---")
@@ -2023,3 +3059,103 @@ with tab3:
         total_value_rows = [r["الربح/الخسارة (قيمة)"] for r in rows if r["الربح/الخسارة (قيمة)"] is not None]
         if total_value_rows:
             st.metric("إجمالي الربح/الخسارة (للأسهم اللي معاها كمية)", f"{sum(total_value_rows):,.2f}")
+
+
+with tab4:
+    st.subheader("🌍 الأسواق العالمية + محرك الذهب/الفضة")
+    st.caption(
+        "لوحة معلوماتية مستقلة تماماً عن تحليل الأسهم - بتراقب الفوركس والكريبتو والمعادن "
+        "والطاقة، ومحرك مخصص لنسبة الذهب للفضة (GSR). مفيش أي ربط بينها وبين توصيات الأسهم حالياً."
+    )
+
+    gsr_tab, global_tab = st.tabs(["🥇 الذهب والفضة (GSR)", "💱 فوركس + كريبتو + طاقة"])
+
+    with gsr_tab:
+        st.markdown("##### 📊 نسبة الذهب للفضة (Gold-to-Silver Ratio)")
+        st.caption(
+            "GSR = سعر أونصة الذهب ÷ سعر أونصة الفضة (بنفس العملة ووحدة الوزن - USD/أونصة للاتنين). "
+            "رقم مرتفع يعني تفوق الذهب نسبياً، رقم منخفض يعني تفوق الفضة نسبياً."
+        )
+
+        gold_snap = fetch_global_asset_snapshot("GC=F")
+        silver_snap = fetch_global_asset_snapshot("SI=F")
+
+        if not gold_snap or not silver_snap:
+            st.warning("⚪ تعذر جلب أسعار الذهب أو الفضة الحالية دلوقتي - جرب تاني بعد شوية.")
+        else:
+            current_gsr = compute_gsr(gold_snap["price"], silver_snap["price"])
+
+            gc1, gc2, gc3 = st.columns(3)
+            gc1.metric("🥇 الذهب (USD/أونصة)", f"${gold_snap['price']:,.2f}",
+                       f"{gold_snap['change_1d_%']:+.2f}%" if gold_snap['change_1d_%'] is not None else None)
+            gc2.metric("🥈 الفضة (USD/أونصة)", f"${silver_snap['price']:,.2f}",
+                       f"{silver_snap['change_1d_%']:+.2f}%" if silver_snap['change_1d_%'] is not None else None)
+            gc3.metric("GSR الحالية", f"{current_gsr:.1f} : 1" if current_gsr else "-")
+
+            # --- التاريخي والـPercentiles (قسم 12: Dynamic Fair Value بدل رقم ثابت) ---
+            gsr_history_df = fetch_gold_silver_history()
+            percentiles = compute_gsr_percentiles(gsr_history_df["gsr"]) if gsr_history_df is not None else None
+
+            if percentiles:
+                st.markdown("##### 📈 GSR التاريخية (آخر سنتين تقريباً)")
+                pc1, pc2, pc3, pc4, pc5 = st.columns(5)
+                pc1.metric("P10", f"{percentiles['p10']:.1f}")
+                pc2.metric("P25", f"{percentiles['p25']:.1f}")
+                pc3.metric("Median (P50)", f"{percentiles['p50']:.1f}")
+                pc4.metric("P75", f"{percentiles['p75']:.1f}")
+                pc5.metric("P90", f"{percentiles['p90']:.1f}")
+                st.caption(f"متوسط آخر سنة: {percentiles['mean_1y']:.1f}")
+
+                silver_momentum_up = (silver_snap.get('change_1w_%') or 0) > 0
+                alert = determine_gsr_alert(current_gsr, percentiles, silver_momentum_up)
+                st.info(f"**الحالة الحالية:** {alert}")
+                st.caption(
+                    "⚠️ ده مؤشر سياق نسبي بس (الفضة مقابل الذهب تاريخياً) - مش توصية شراء أو بيع آلية، "
+                    "والاتجاه العام ممكن يستمر حتى لو GSR في منطقة متطرفة تاريخياً."
+                )
+            else:
+                st.caption("⚪ تعذر جلب التاريخ الكامل لحساب الـPercentiles - عرض السعر اللحظي بس.")
+
+            st.markdown("##### 🧮 السعر النظري للفضة عند نسب مرجعية مختلفة (Implied Silver Price)")
+            st.caption("قسم 9: مش السعر العادل المطلق - سعر نسبي مبني على GSR مرجعي مختارة.")
+            reference_ratios = [40, 70, 85, 100, 120]
+            implied_rows = []
+            for ref_ratio in reference_ratios:
+                implied = implied_silver_price(gold_snap["price"], ref_ratio)
+                gap = fair_value_gap_pct(implied, silver_snap["price"])
+                implied_rows.append({
+                    "Reference GSR": f"{ref_ratio}:1",
+                    "السعر النظري للفضة": f"${implied:.2f}" if implied else "-",
+                    "Fair Value Gap %": f"{gap:+.1f}%" if gap is not None else "-",
+                })
+            st.dataframe(pd.DataFrame(implied_rows), use_container_width=True, hide_index=True)
+
+            with st.expander("🥉🥈 باقي المعادن (بلاتين/بالاديوم/نحاس)"):
+                for name, yticker in GLOBAL_ASSETS["metals"].items():
+                    if yticker in ("GC=F", "SI=F"):
+                        continue
+                    snap = fetch_global_asset_snapshot(yticker)
+                    if snap:
+                        st.metric(name, f"${snap['price']:,.2f}",
+                                  f"{snap['change_1d_%']:+.2f}%" if snap['change_1d_%'] is not None else None)
+
+    with global_tab:
+        for group_key, group_label in [("fx", "💱 الفوركس"), ("crypto", "₿ العملات الرقمية"), ("energy", "🛢️ الطاقة")]:
+            st.markdown(f"##### {group_label}")
+            cols = st.columns(4)
+            for i, (name, yticker) in enumerate(GLOBAL_ASSETS[group_key].items()):
+                snap = fetch_global_asset_snapshot(yticker)
+                with cols[i % 4]:
+                    if snap:
+                        st.metric(
+                            name, f"{snap['price']:,.4f}" if group_key == "fx" else f"${snap['price']:,.2f}",
+                            f"{snap['change_1d_%']:+.2f}%" if snap['change_1d_%'] is not None else None,
+                        )
+                    else:
+                        st.caption(f"{name}: مفيش بيانات متاحة")
+            st.write("---")
+
+        st.caption(
+            "⚠️ الأسعار دي معلوماتية بس ولسه مش مربوطة بتحليل الأسهم المصرية "
+            "(Correlation Engine ومحرك Market Regime لسه مرحلة قادمة)."
+        )
