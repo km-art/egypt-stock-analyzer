@@ -1456,13 +1456,16 @@ def find_support_resistance(df, order: int = 5, max_lookback: int = 150):
 
 
 # ---------------------------------------------------------------------------
-# Eagle Score - نظام النقاط الموحّد (100 نقطة) - قسم 9 من خطة V2
+# Eagle Score 2.0 - نظام النقاط الموحّد (100 نقطة) - EAGLE INVESTOR OS 2.0 (قسم 3)
 # ---------------------------------------------------------------------------
+# ملحوظة تطوّر: V2 كانت بتدّي وزن صغير جداً للتحليل المالي (2 بس) وتركيز
+# كبير على السيولة اللحظية. النسخة 2.0 دي بتوازن أكتر بين الفني والمالي
+# (Fundamentals بقت 20 + Valuation جديدة بـ10) وبتضيف Market Regime -
+# حالة السوق ككل بقت جزء من تقييم كل سهم مش بس معلومة جانبية.
 EAGLE_WEIGHTS = {
-    "trend": 15, "momentum": 10, "volume_rvol": 10, "liquidity": 8,
-    "price_structure": 10, "breakout": 8, "relative_strength": 8,
-    "sector_strength": 4, "accumulation_distribution": 5, "risk_reward": 10,
-    "fundamentals": 2, "market_depth": 10,
+    "trend": 15, "momentum": 10, "volume_rvol": 10, "fundamentals": 20,
+    "valuation": 10, "relative_strength": 10, "market_depth": 5,
+    "risk_reward": 10, "liquidity": 5, "market_regime": 5,
 }  # المجموع = 100
 
 
@@ -1481,6 +1484,66 @@ def fetch_egx30_change_20d():
         return float(change_pct)
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Market Regime Detector - EAGLE INVESTOR OS 2.0 (قسم 7)
+# ---------------------------------------------------------------------------
+@st.cache_data(ttl=1800, show_spinner=False)
+def detect_market_regime():
+    """
+    بيصنّف حالة السوق المصري ككل: Bull / Sideways / Bear / High Volatility.
+    مبني على اتجاه مؤشر EGX30 (فوق/تحت المتوسطات المتحركة) + مستوى تقلبه
+    الحالي. يرجع dict فيه التصنيف + الأرقام اللي بُني عليها، أو None لو
+    فشل الجلب (مايوقفش باقي الأداة، والكود اللي بيستخدمه بيتعامل مع
+    None بمحايدة).
+    """
+    try:
+        idx_df = fetch_egx_history_tv("EGX30.CA", n_bars=260)
+        if idx_df is None or idx_df.empty or len(idx_df) < 60:
+            return None
+
+        idx_df = calculate_indicators(idx_df)
+        last = idx_df.iloc[-1]
+        close = float(last['Close'])
+        ma20 = float(idx_df['Close'].rolling(20).mean().iloc[-1])
+        ma50 = float(idx_df['Close'].rolling(50).mean().iloc[-1])
+        daily_vol_pct = float(last['Daily_Volatility_%']) if pd.notna(last.get('Daily_Volatility_%', np.nan)) else None
+        change_20d = float((close / idx_df['Close'].iloc[-21] - 1) * 100) if len(idx_df) >= 21 else None
+
+        # تقلب عالي بيغلب باقي التصنيف - سوق متقلب بشدة خطر بغض النظر عن الاتجاه
+        if daily_vol_pct is not None and daily_vol_pct >= 2.5:
+            regime = "🔴 High Volatility (تقلب حاد - حذر مضاعف)"
+        elif close > ma20 > ma50:
+            regime = "🟢 Bull (اتجاه صاعد واضح)"
+        elif close < ma20 < ma50:
+            regime = "🔴 Bear (اتجاه هابط واضح)"
+        else:
+            regime = "🟡 Sideways (عرضي / بدون اتجاه واضح)"
+
+        return {
+            "regime": regime, "close": close, "ma20": ma20, "ma50": ma50,
+            "daily_volatility_%": daily_vol_pct, "change_20d_%": change_20d,
+        }
+    except Exception:
+        return None
+
+
+def market_regime_score_component(regime_info: dict):
+    """
+    تحويل حالة السوق لنقاط (5 من Eagle Score 2.0): في سوق صاعد أو عرضي
+    هادي، الفرص الفردية أوثق - في سوق هابط أو شديد التقلب، حتى أقوى سهم
+    محاط بمخاطرة أعلى فبنطفي النقاط شوية كتنبيه ضمني، مش عقاب على السهم
+    نفسه.
+    """
+    if not regime_info:
+        return None
+    regime = regime_info["regime"]
+    if "Bull" in regime: return 5.0
+    if "Sideways" in regime: return 3.0
+    if "Bear" in regime: return 1.0
+    if "High Volatility" in regime: return 0.5
+    return 2.5
 
 
 # ---------------------------------------------------------------------------
@@ -1639,11 +1702,11 @@ def _score_volume_rvol(rvol, price_up_today):
 
 
 def _score_liquidity(avg_trade_value):
-    """Liquidity (8 نقاط): حسب متوسط قيمة التداول اليومي التقريبي."""
-    if avg_trade_value >= 20_000_000: return 8.0
-    if avg_trade_value >= 5_000_000: return 6.0
-    if avg_trade_value >= 1_000_000: return 4.0
-    if avg_trade_value >= 300_000: return 2.0
+    """Liquidity (5 نقاط في Eagle Score 2.0): حسب متوسط قيمة التداول اليومي التقريبي."""
+    if avg_trade_value >= 20_000_000: return 5.0
+    if avg_trade_value >= 5_000_000: return 3.75
+    if avg_trade_value >= 1_000_000: return 2.5
+    if avg_trade_value >= 300_000: return 1.25
     return 0.0
 
 
@@ -1681,14 +1744,14 @@ def _score_breakout(p, nearest_resistance, rvol, price_up_today):
 
 
 def _score_relative_strength(stock_change_20d, egx30_change_20d):
-    """Relative Strength (8 نقاط): أداء السهم مقابل مؤشر EGX30 خلال 20 يوم."""
+    """Relative Strength (10 نقاط في Eagle Score 2.0): أداء السهم مقابل مؤشر EGX30 خلال 20 يوم."""
     if stock_change_20d is None or egx30_change_20d is None:
         return None  # مش N/A بصفر - علشان مايتحسبش ضد السهم بالغلط
     relative_pct = stock_change_20d - egx30_change_20d
-    if relative_pct >= 15: return 8.0
-    if relative_pct >= 5: return 6.0
-    if relative_pct >= 0: return 4.0
-    if relative_pct >= -10: return 2.0
+    if relative_pct >= 15: return 10.0
+    if relative_pct >= 5: return 7.5
+    if relative_pct >= 0: return 5.0
+    if relative_pct >= -10: return 2.5
     return 0.0
 
 
@@ -1728,22 +1791,37 @@ def _score_risk_reward(rr_ratio):
 
 
 def _score_fundamentals(fund_score):
-    """Fundamentals (2 نقطة بس - وزن صغير مقصود لأن الأداة أساسها فني)."""
+    """Fundamentals (20 نقطة في Eagle Score 2.0 - وزن كبير عمداً بعد ما كان صغير جداً في V2)."""
     if fund_score is None:
         return None
-    return round((fund_score / 100) * 2, 2)
+    return round((fund_score / 100) * 20, 2)
+
+
+def _score_valuation(graham_upside_pct):
+    """
+    Valuation (10 نقاط - جديدة في 2.0): مبنية على فرق قاعدة جراهام %
+    (نفس الرقم المعروض فعلاً في عمود 'فرق جراهام %'). كل ما السهم أرخص من
+    قيمته العادلة المحسوبة، كل ما النقاط أعلى.
+    """
+    if graham_upside_pct is None:
+        return None
+    if graham_upside_pct >= 30: return 10.0
+    if graham_upside_pct >= 15: return 7.5
+    if graham_upside_pct >= 0: return 5.0
+    if graham_upside_pct >= -15: return 2.5
+    return 0.0
 
 
 def _score_market_depth(depth_metrics):
-    """Market Depth (10 نقاط) - لو متاحة وسليمة بس، وإلا None (مش صفر)."""
+    """Market Depth (5 نقاط في 2.0) - لو متاحة وسليمة بس، وإلا None (مش صفر)."""
     if not depth_metrics:
         return None
     imb = depth_metrics.get("imbalance_%")
     spread = depth_metrics.get("spread_%")
     if imb is None:
         return None
-    score = 5.0 + (imb / 100) * 5.0  # من صفر لـ10 حسب عدم التوازن (-100%..+100%)
-    score = max(min(score, 10.0), 0.0)
+    score = 2.5 + (imb / 100) * 2.5  # من صفر لـ5 حسب عدم التوازن (-100%..+100%)
+    score = max(min(score, 5.0), 0.0)
     if spread is not None and spread > 1.0:  # Spread عالي = سيولة لحظية ضعيفة، بيقلل الثقة
         score *= 0.7
     return round(score, 1)
@@ -1778,6 +1856,40 @@ def compute_eagle_score(components: dict):
         "components_used": len(available_components),
         "components_total": len(EAGLE_WEIGHTS),
     }
+
+
+def compute_opportunity_risk_confidence(components: dict, eagle_result: dict, rr_ratio, atr_pct, depth_metrics):
+    """
+    EAGLE INVESTOR OS 2.0 (قسم 3): "لا نستخدم Score واحدًا فقط" - بنطلع
+    3 مقاييس تانية لجانب Eagle Score نفسها:
+
+    - Opportunity Score: قوة الفرصة (Trend+Momentum+Breakout لو موجودة+Valuation)
+    - Risk Score: المخاطرة (عكسي - أعلى يعني مخاطرة أعلى) من التقلب (ATR)
+      وRisk/Reward وجودة بيانات العمق
+    - Confidence Score: مدى اكتمال البيانات اللي الـScore اتبني عليها
+      (نفس فكرة قسم 18: Data Confidence بجانب كل إشارة)
+    """
+    comps = eagle_result.get("components", {})
+
+    opportunity_parts = [comps.get(k) for k in ["trend", "momentum", "relative_strength", "valuation"] if comps.get(k) is not None]
+    opportunity_score = round((sum(opportunity_parts) / max(len(opportunity_parts), 1)) * 10, 1) if opportunity_parts else None
+
+    risk_penalty = 0.0
+    risk_factors = 0
+    if atr_pct is not None:
+        risk_penalty += min(atr_pct / 8, 1.0) * 40  # تقلب عالي = مخاطرة أعلى
+        risk_factors += 1
+    if rr_ratio is not None:
+        risk_penalty += max(0, (2 - rr_ratio)) * 15  # RR ضعيف = مخاطرة أعلى
+        risk_factors += 1
+    if depth_metrics is not None and depth_metrics.get("spread_%") is not None:
+        risk_penalty += min(depth_metrics["spread_%"] / 2, 1.0) * 20
+        risk_factors += 1
+    risk_score = round(min(risk_penalty, 100), 1) if risk_factors > 0 else None
+
+    confidence_score = round((eagle_result.get("components_used", 0) / max(eagle_result.get("components_total", 1), 1)) * 100, 1)
+
+    return {"opportunity_score": opportunity_score, "risk_score": risk_score, "confidence_score": confidence_score}
 
 
 def determine_entry_quality(eagle_score, dist_to_resistance_pct, rr_ratio, depth_metrics, spread_threshold=1.0):
@@ -2307,7 +2419,46 @@ with tab1:
                         rr_quality = "ممتازة 🌟" if rr_ratio_t1 >= 2 else ("مقبولة" if rr_ratio_t1 >= 1 else "ضعيفة ⚠️")
                         st.metric("نسبة Risk/Reward", f"{rr_ratio_t1}", rr_quality)
                     else:
+                        rr_ratio_t1 = None
                         st.caption("Risk/Reward: مش متاحة حالياً (محتاجين هدف ربح ووقف خسارة صالحين).")
+
+                    # --- Position Sizing - EAGLE INVESTOR OS 2.0 (قسم 5) ---
+                    # كل إشارة لازم تتحول لقرار رأسمالي: حجم مركز محسوب حسب رأس
+                    # مالك ونسبة المخاطرة اللي انت مرتاح ليها، مش مجرد "اشتري"
+                    if risk_amount_t1 > 0:
+                        st.markdown("##### 💰 حاسبة حجم المركز (Position Sizing)")
+                        ps_col1, ps_col2 = st.columns(2)
+                        with ps_col1:
+                            capital_input = st.number_input(
+                                f"رأس المال المتاح ({price_currency})", min_value=0.0,
+                                value=10000.0, step=1000.0, key="position_sizing_capital",
+                            )
+                        with ps_col2:
+                            risk_pct_input = st.slider(
+                                "أقصى نسبة مخاطرة من رأس المال للصفقة دي %",
+                                min_value=0.5, max_value=10.0, value=1.5, step=0.5,
+                                key="position_sizing_risk_pct",
+                            )
+                        max_loss_amount = capital_input * (risk_pct_input / 100)
+                        suggested_shares = int(max_loss_amount / risk_amount_t1) if risk_amount_t1 > 0 else 0
+                        position_value = suggested_shares * price
+                        position_pct_of_capital = (position_value / capital_input * 100) if capital_input > 0 else None
+
+                        if suggested_shares <= 0:
+                            st.warning("رأس المال أو نسبة المخاطرة المحددة صغيرة جداً بالنسبة للفارق لغاية وقف الخسارة - جرب تزود أي منهم.")
+                        else:
+                            sp1, sp2, sp3 = st.columns(3)
+                            sp1.metric("عدد الأسهم المقترح", f"{suggested_shares:,}")
+                            sp2.metric("قيمة المركز الكلية", f"{position_value:,.0f} {price_currency}")
+                            sp3.metric("أقصى خسارة نقدية متوقعة", f"{max_loss_amount:,.0f} {price_currency}")
+                            if position_pct_of_capital is not None and position_pct_of_capital > 30:
+                                st.caption(f"⚠️ المركز ده بيمثل {position_pct_of_capital:.0f}% من رأس مالك - تركيز عالي في سهم واحد، فكر لو ده مناسب لك.")
+                            else:
+                                st.caption(f"المركز ده بيمثل {position_pct_of_capital:.0f}% من رأس مالك.")
+                        st.caption(
+                            "الحساب: (رأس المال × نسبة المخاطرة) ÷ (السعر الحالي − وقف الخسارة). "
+                            "ده حجم المركز اللي لو السهم كسر وقف الخسارة، خسارتك النقدية متساوية بالظبط للحد اللي انت حددته - مش أكتر."
+                        )
 
                     # --- عمق السوق (Market Depth / Level 2) - معلوماتي بس حالياً، لسه مش داخل في القرار ---
                     if ticker_input.endswith(".CA"):
@@ -2535,6 +2686,12 @@ with tab2:
         eagle_raw = {}  # ticker -> ingredients لازمة لحساب Relative/Sector Strength بعد ما المسح يخلص
 
         egx30_change_20d = fetch_egx30_change_20d()
+        market_regime_info = detect_market_regime()
+        market_regime_component = market_regime_score_component(market_regime_info)
+        if market_regime_info:
+            regime_banner = st.container()
+            with regime_banner:
+                st.info(f"🌐 **حالة السوق العامة (EGX30):** {market_regime_info['regime']}")
 
         progress_bar = st.progress(0)
         total_stocks = len(scan_stocks)
@@ -2711,10 +2868,12 @@ with tab2:
                         "accumulation_distribution": _score_accumulation_distribution(ad_slope_10d, vol_ma10),
                         "risk_reward": _score_risk_reward(rr_ratio),
                         "market_depth": _score_market_depth(depth_metrics_for_score),
+                        "market_regime": market_regime_component,
                         # دول محتاجين بيانات كل الأسهم اللي اتمسحت - بيتحسبوا بعد الحلقة
                         "relative_strength": None,
                         "sector_strength": None,
                         "fundamentals": None,  # بيتحط لو include_fundamentals_scan شغال (تحت)
+                        "valuation": None,     # نفس الشيء - بيتحط مع فرق جراهام لو الفاندمنتال شغالة
                     }
 
                     data_entry = {
@@ -2772,6 +2931,7 @@ with tab2:
                         data_entry["فرق جراهام %"] = graham["graham_upside_%"]
                         data_entry["تحت السعر العادل؟"] = graham["undervalued_per_graham"]
                         eagle_components["fundamentals"] = _score_fundamentals(fund_score)
+                        eagle_components["valuation"] = _score_valuation(graham["graham_upside_%"])
 
                     verdict = compute_verdict(
                         momentum_score, fund_score_for_verdict,
@@ -2790,6 +2950,7 @@ with tab2:
                         "dist_to_resistance_pct": dist_to_resistance_pct,
                         "rr_ratio": rr_ratio,
                         "depth_metrics": depth_metrics_for_score,
+                        "atr_pct": atr_pct,
                     }
 
                     if is_new_cross and r < 52:
@@ -2842,9 +3003,15 @@ with tab2:
                         eagle_result["eagle_score"], info["dist_to_resistance_pct"],
                         info["rr_ratio"], info["depth_metrics"],
                     )
+                    orc = compute_opportunity_risk_confidence(
+                        comps, eagle_result, info["rr_ratio"], info["atr_pct"], info["depth_metrics"]
+                    )
                     info["data_entry"]["🦅 Eagle Score (100)"] = eagle_result["eagle_score"]
                     info["data_entry"]["مكوّنات متاحة"] = f"{eagle_result['components_used']}/{eagle_result['components_total']}"
                     info["data_entry"]["Entry Quality"] = entry_quality
+                    info["data_entry"]["Opportunity Score"] = orc["opportunity_score"]
+                    info["data_entry"]["Risk Score"] = orc["risk_score"]
+                    info["data_entry"]["Confidence Score %"] = orc["confidence_score"]
 
             if skipped_count:
                 st.info(f"ℹ️ تم تخطي {skipped_count} سهم أثناء التحليل (بيانات ناقصة أو تعذر حساب المؤشرات).")
