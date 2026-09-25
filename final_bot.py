@@ -28,6 +28,13 @@ from eagle_core import (
 )
 
 # ---------------------------------------------------------------------------
+# PHASE 1.7A: Price Magnitude / Stability / Bottom-Trap Detector.
+# Context إضافي بس في Decision Card - صفر تأثير على Eagle Score أو القرار
+# النهائي فوق (price_behavior_adjustment = 0 دايماً في هذه المرحلة، قسم 11).
+# ---------------------------------------------------------------------------
+from price_behavior_engine import build_price_behavior_context, format_decision_card_addition
+
+# ---------------------------------------------------------------------------
 # جلسة yfinance مضادة للحظر (Yahoo بيحظر السيرفرات المشتركة زي Streamlit Cloud)
 # ---------------------------------------------------------------------------
 # الحل المعتمد حالياً من مجتمع yfinance: استخدام curl_cffi عشان يقلّد بصمة
@@ -2368,6 +2375,46 @@ with tab1:
                             "شغالين فعلياً؛ News/Macro/Geopolitical معطّلين لعدم توفر مصدر بيانات حقيقي "
                             "(DISABLED_NO_PROVIDER) ومش بيساهموا في الدرجة."
                         )
+
+                    # ===================================================================
+                    # PHASE 1.7A — Price Magnitude / Stability / Bottom-Trap Context
+                    # Context بس (قسم 10 و17) - صفر تأثير على eagle_result_t1 أو
+                    # final_decision_t1 فوق. لو حصل خطأ هنا لأي سبب، بنعرضه كـ
+                    # UNAVAILABLE بدل ما نكسر باقي الكارت (Decision Card الأساسي
+                    # فوق أهم وميتأثرش).
+                    # ===================================================================
+                    with st.expander("🧊 Price Behavior Context (Phase 1.7A) — سياق إضافي، مش إشارة شراء/بيع", expanded=False):
+                        try:
+                            pb_context = build_price_behavior_context(df)
+                            pb_card = format_decision_card_addition(pb_context)
+
+                            pb1, pb2, pb3, pb4 = st.columns(4)
+                            pb1.metric("Price Stability", pb_context["price_stability"]["price_stability_status"])
+                            pb2.metric("Trend Continuation Risk", pb_context["trend_continuation_risk"]["trend_continuation_risk"])
+                            pb3.metric("Falling Knife Risk", pb_context["bottom_trap"]["falling_knife_risk"])
+                            pb4.metric("Bottom Status", pb_context["bottom_trap"]["bottom_status"])
+
+                            st.markdown("**Observed Facts:**")
+                            for k, v in pb_card["observed_facts"].items():
+                                st.write(f"- {k}: {v if v is not None else 'N/A'}")
+
+                            st.markdown("**Computed Metrics:**")
+                            for k, v in pb_card["computed_metrics"].items():
+                                st.write(f"- {k}: {v if v is not None else 'N/A'}")
+
+                            st.markdown("**Interpretation:**")
+                            for note in pb_card["interpretation"]:
+                                st.caption(f"- {note}")
+
+                            st.info(f"**Decision:** {pb_card['decision']}")
+                            st.caption(
+                                f"Coverage: {pb_context['coverage_ratio'] * 100:.0f}% — "
+                                f"price_behavior_adjustment={pb_context['price_behavior_adjustment']} "
+                                f"(ENABLE_PRICE_BEHAVIOR_SCORE_ADJUSTMENT="
+                                f"{pb_context['enable_price_behavior_score_adjustment']})"
+                            )
+                        except Exception as pb_err:
+                            st.caption(f"⚪ Price Behavior Context غير متاح دلوقتي ({pb_err}) - الكارت الأساسي فوق مش متأثر.")
 
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=df.index, y=df['Close'].squeeze(), name='سعر الإغلاق', line=dict(color='#1f77b4', width=2)))
