@@ -1460,6 +1460,122 @@ def fetch_global_asset_snapshot(yahoo_ticker: str):
         return None
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_global_asset_fundamentals(yahoo_ticker: str, asset_class: str):
+    """
+    ⚠️ الفاندمنتال هنا مختلف جذرياً عن فاندمنتال الأسهم (P/E، جراهام) لأن
+    مفيش "شركة" وراء عملة رقمية أو زوج عملات أو عقد سلعة آجل - مفيش أرباح
+    ولا قوائم مالية. اللي بنعرضه هو أقرب مكافئ فعلي متاح فعلاً من المصدر:
+
+    - كريبتو: Market Cap + المعروض المتداول/الأقصى + أعلى/أدنى 52 أسبوع
+      (عبر yf.Ticker(...).info - أقرب حاجة لـ"فاندمنتال" لعملة رقمية).
+    - فوركس/معادن: مفيش مكافئ حقيقي متاح من المصدر الحالي (فروق أسعار
+      الفائدة للفوركس، أو بيانات المخزون/COT للمعادن محتاجة مصدر تاني
+      مالوش API متاح هنا) - بيترجع GAP موثّق بصراحة بدل تلفيق أرقام.
+    """
+    if asset_class != "crypto":
+        return {"available": False, "reason": (
+            "فاندمنتال بمعنى الشركات (أرباح/P/E) لا ينطبق على فوركس أو المعادن - "
+            "ده سوق عملات/عقود آجلة مش شركة. المكافئ الحقيقي (فروق الفائدة للفوركس، "
+            "أو بيانات المخزون/COT للمعادن) غير متاح من المصدر الحالي (GAP موثّق)."
+        )}
+    try:
+        info = yf.Ticker(yahoo_ticker, session=YF_SESSION).info
+        if not info:
+            return {"available": False, "reason": "المصدر (Yahoo) مارجعش بيانات فاندمنتال لهذه العملة الرقمية دلوقتي."}
+        return {
+            "available": True,
+            "market_cap": info.get("marketCap"),
+            "volume_24h": info.get("volume24Hr") or info.get("volume"),
+            "circulating_supply": info.get("circulatingSupply"),
+            "max_supply": info.get("maxSupply"),
+            "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+            "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+        }
+    except Exception as e:
+        return {"available": False, "reason": f"تعذر جلب بيانات الفاندمنتال دلوقتي ({e})."}
+
+
+def analyze_global_asset_technical(yahoo_ticker: str, asset_class: str):
+    """
+    تحليل فني كامل لأصل عالمي (كريبتو/فوركس/معادن) بإعادة استخدام **نفس**
+    دوال eagle_core.py الفنية العامة (EMA9/21، RSI، MFI، ADX، بولينجر،
+    الدعم/المقاومة) - صفر إعادة حساب مؤشرات من الصفر (Single Source of
+    Truth، نفس مبدأ Phase 1.6/1.7A بالضبط).
+
+    ⚠️ عمداً **مش** بينادي compute_eagle_score/make_final_decision الكاملين:
+    دول مصممين لأسهم مصر بمكوّنات زي السيولة بالجنيه، القطاع، الفاندمنتال
+    بمنطق جراهام - تطبيقهم على BTC أو EUR/USD هيدّي نتيجة مضلّلة. بدل كده
+    بنستخدم بس المكوّنات الفنية العامة (Trend/Momentum/Volume) اللي منطقها
+    رياضي عام مش مرتبط بسوق الأسهم.
+    """
+    df = fetch_single_stock(yahoo_ticker, period="1y")
+    if df is None or df.empty or len(df) < 30:
+        return None
+    df = calculate_indicators(df)
+    if len(df) < CROSS_LOOKBACK + 1:
+        return None
+
+    last = df.iloc[-1]
+    prev = df.iloc[-CROSS_LOOKBACK]
+
+    p = float(last['Close'])
+    e9, e21 = float(last['EMA9']), float(last['EMA21'])
+    rsi, mfi = float(last['RSI_14']), float(last['MFI_14'])
+    upper, lower = float(last['Upper_Band']), float(last['Lower_Band'])
+    adx_val = float(last['ADX_14']) if pd.notna(last.get('ADX_14', np.nan)) else 0.0
+    atr_pct = float(last['ATR_%']) if pd.notna(last.get('ATR_%', np.nan)) else 0.0
+    atr_14 = float(last['ATR_14']) if pd.notna(last.get('ATR_14', np.nan)) else 0.0
+    dist_high_52w = float(last['Dist_From_52W_High_%']) if pd.notna(last.get('Dist_From_52W_High_%', np.nan)) else None
+    dist_low_52w = float(last['Dist_From_52W_Low_%']) if pd.notna(last.get('Dist_From_52W_Low_%', np.nan)) else None
+    daily_vol_pct = float(last['Daily_Volatility_%']) if pd.notna(last.get('Daily_Volatility_%', np.nan)) else None
+    up_streak = int(last['Consecutive_Up_Days']) if pd.notna(last.get('Consecutive_Up_Days', np.nan)) else 0
+    vol_today = float(last['Volume']) if pd.notna(last.get('Volume', np.nan)) else 0.0
+    vol_ma10 = float(last['Vol_MA10']) if pd.notna(last.get('Vol_MA10', np.nan)) else 0.0
+    rvol = float(last['RVOL']) if pd.notna(last.get('RVOL', np.nan)) else 1.0
+    yesterday_close = float(df['Close'].iloc[-2]) if len(df) >= 2 else p
+    price_up_today = p > yesterday_close
+
+    is_new_cross = bool(prev['EMA9'] <= prev['EMA21']) and (e9 > e21)
+    nearest_support, nearest_resistance = find_support_resistance(df)
+
+    trend_pts = _score_trend(e9, e21, adx_val, p)          # /15 - عام، صفر تكرار منطق
+    momentum_pts = _score_momentum(rsi, mfi, upper, lower, p)  # /10 (ممكن سالبة)
+    # الفوركس عادة مفيهاش حجم مركزي حقيقي عبر yfinance - نعرض RVOL بس بتحذير صريح
+    volume_meaningful = asset_class in ("crypto", "metals") and vol_today > 0
+    rvol_pts = _score_volume_rvol(rvol, price_up_today) if volume_meaningful else None
+    technical_total = round(trend_pts + momentum_pts + (rvol_pts or 0), 1)
+
+    if technical_total >= 20:
+        technical_read = "🟢 قراءة فنية إيجابية (اتجاه + عزم متوافقين صاعد)"
+    elif technical_total <= 5:
+        technical_read = "🔴 قراءة فنية سلبية (اتجاه + عزم متوافقين هابط)"
+    else:
+        technical_read = "🟡 قراءة فنية مختلطة/عرضية"
+
+    # قسم 1.7A - Price Behavior Context (سياق بس، بيشتغل مع أي OHLCV عام)
+    try:
+        pb_context = build_price_behavior_context(df)
+    except Exception:
+        pb_context = None
+
+    return {
+        "price": p, "ema9": e9, "ema21": e21, "rsi": rsi, "mfi": mfi,
+        "upper_band": upper, "lower_band": lower, "adx": adx_val,
+        "atr_pct": atr_pct, "atr_14": atr_14,
+        "dist_high_52w": dist_high_52w, "dist_low_52w": dist_low_52w,
+        "daily_vol_pct": daily_vol_pct, "up_streak": up_streak,
+        "volume_today": vol_today, "vol_ma10": vol_ma10, "rvol": rvol,
+        "volume_meaningful": volume_meaningful,
+        "price_up_today": price_up_today, "is_new_cross": is_new_cross,
+        "nearest_support": nearest_support, "nearest_resistance": nearest_resistance,
+        "trend_pts": trend_pts, "momentum_pts": momentum_pts, "rvol_pts": rvol_pts,
+        "technical_total": technical_total, "technical_read": technical_read,
+        "price_behavior_context": pb_context,
+        "df": df,
+    }
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_gold_silver_history(period_days: int = 730):
     """
@@ -3366,7 +3482,9 @@ with tab4:
         "والطاقة، ومحرك مخصص لنسبة الذهب للفضة (GSR). مفيش أي ربط بينها وبين توصيات الأسهم حالياً."
     )
 
-    gsr_tab, global_tab = st.tabs(["🥇 الذهب والفضة (GSR)", "💱 فوركس + كريبتو + طاقة"])
+    gsr_tab, global_tab, deep_tab = st.tabs([
+        "🥇 الذهب والفضة (GSR)", "💱 فوركس + كريبتو + طاقة", "🔬 تحليل فني ومالي تفصيلي",
+    ])
 
     with gsr_tab:
         st.markdown("##### 📊 نسبة الذهب للفضة (Gold-to-Silver Ratio)")
@@ -3457,3 +3575,119 @@ with tab4:
             "⚠️ الأسعار دي معلوماتية بس ولسه مش مربوطة بتحليل الأسهم المصرية "
             "(Correlation Engine ومحرك Market Regime لسه مرحلة قادمة)."
         )
+
+    with deep_tab:
+        st.markdown("##### 🔬 تحليل فني ومالي تفصيلي - كريبتو / فوركس / معادن")
+        st.caption(
+            "بيستخدم **نفس** دوال المؤشرات الفنية العامة من eagle_core.py (EMA9/21، RSI، MFI، "
+            "ADX، بولينجر، الدعم/المقاومة) - صفر منطق مكرر. **لكنه عمداً مش بينادي Eagle Score "
+            "الكامل** لأن مكوّناته (السيولة بالجنيه، القطاع، فاندمنتال جراهام) مصممة لأسهم مصر "
+            "بس وتطبيقها هنا هيدّي نتيجة مضلّلة."
+        )
+
+        dcol1, dcol2 = st.columns(2)
+        with dcol1:
+            asset_class_choice = st.radio(
+                "اختر نوع الأصل:", options=["crypto", "fx", "metals"],
+                format_func=lambda k: {"crypto": "₿ عملات رقمية", "fx": "💱 فوركس", "metals": "🥇 معادن"}[k],
+                horizontal=True, key="deep_asset_class",
+            )
+        with dcol2:
+            asset_options = GLOBAL_ASSETS[asset_class_choice]
+            asset_name_choice = st.selectbox("اختر الأصل:", list(asset_options.keys()), key="deep_asset_name")
+            asset_ticker_choice = asset_options[asset_name_choice]
+
+        if st.button("🔍 تشغيل التحليل الفني والمالي", key="deep_analyze_btn"):
+            with st.spinner(f"جاري تحليل {asset_name_choice}..."):
+                result = analyze_global_asset_technical(asset_ticker_choice, asset_class_choice)
+
+            if result is None:
+                st.warning("⚪ تعذر جلب بيانات تاريخية كافية لهذا الأصل دلوقتي - جرب تاني بعد شوية.")
+            else:
+                price_fmt = f"{result['price']:,.4f}" if asset_class_choice == "fx" else f"${result['price']:,.2f}"
+                st.markdown(
+                    f'<div style="background-color:#2c3e50; padding:16px; border-radius:10px; '
+                    f'text-align:center; margin-bottom:16px;"><h3 style="color:white; margin:0;">'
+                    f'{asset_name_choice}: {price_fmt} — {result["technical_read"]}</h3></div>',
+                    unsafe_allow_html=True,
+                )
+
+                st.markdown("###### 📐 التحليل الفني")
+                tc1, tc2, tc3, tc4 = st.columns(4)
+                tc1.metric("RSI (14)", f"{result['rsi']:.1f}")
+                tc2.metric("MFI (14)", f"{result['mfi']:.1f}")
+                tc3.metric("ADX (قوة الاتجاه)", f"{result['adx']:.1f}")
+                tc4.metric("EMA9 > EMA21؟", "🟢 نعم" if result['ema9'] > result['ema21'] else "🔴 لا")
+
+                tc5, tc6, tc7, tc8 = st.columns(4)
+                tc5.metric("ATR (تقلب %)", f"{result['atr_pct']:.2f}%")
+                tc6.metric("التقلب اليومي (14 يوم)", f"{result['daily_vol_pct']:.2f}%" if result['daily_vol_pct'] is not None else "N/A")
+                tc7.metric("أيام صعود متتالية", result['up_streak'])
+                tc8.metric(
+                    "تقاطع ذهبي جديد؟",
+                    "✨ نعم" if result['is_new_cross'] else "لا",
+                )
+
+                tc9, tc10 = st.columns(2)
+                tc9.metric("أقرب دعم", f"{result['nearest_support']:.4f}" if result['nearest_support'] else "N/A")
+                tc10.metric("أقرب مقاومة", f"{result['nearest_resistance']:.4f}" if result['nearest_resistance'] else "N/A")
+
+                st.markdown("###### 🧮 الدرجة الفنية العامة (Trend + Momentum + Volume - مش Eagle Score)")
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                sc1.metric("Trend (/15)", result['trend_pts'])
+                sc2.metric("Momentum (/10)", result['momentum_pts'])
+                sc3.metric("Volume/RVOL (/10)", f"{result['rvol_pts']}" if result['rvol_pts'] is not None else "N/A")
+                sc4.metric("الإجمالي", result['technical_total'])
+                if not result['volume_meaningful']:
+                    st.caption(
+                        "⚠️ مكوّن الحجم (RVOL) اتشال من الإجمالي لأن الفوركس مفهاش حجم تداول "
+                        "مركزي حقيقي عبر Yahoo Finance (بيانات الحجم للفوركس غير موثوقة عادة)."
+                    )
+
+                # --- Phase 1.7A Price Behavior Context (سياق بس) ---
+                if result.get("price_behavior_context"):
+                    with st.expander("🧊 Price Behavior Context (Phase 1.7A) — سياق إضافي، مش إشارة شراء/بيع", expanded=False):
+                        try:
+                            pb_context = result["price_behavior_context"]
+                            pb_card = format_decision_card_addition(pb_context)
+                            pb1, pb2, pb3, pb4 = st.columns(4)
+                            pb1.metric("Price Stability", pb_context["price_stability"]["price_stability_status"])
+                            pb2.metric("Trend Continuation Risk", pb_context["trend_continuation_risk"]["trend_continuation_risk"])
+                            pb3.metric("Falling Knife Risk", pb_context["bottom_trap"]["falling_knife_risk"])
+                            pb4.metric("Bottom Status", pb_context["bottom_trap"]["bottom_status"])
+                            st.info(f"**Decision:** {pb_card['decision']}")
+                        except Exception as pb_err:
+                            st.caption(f"⚪ Price Behavior Context غير متاح ({pb_err}).")
+
+                # --- الفاندمنتال (المالي) ---
+                st.markdown("###### 💰 التحليل المالي (Fundamentals)")
+                fundamentals = fetch_global_asset_fundamentals(asset_ticker_choice, asset_class_choice)
+                if not fundamentals.get("available"):
+                    st.info(f"⚪ {fundamentals.get('reason', 'غير متاح.')}")
+                else:
+                    fc1, fc2 = st.columns(2)
+                    fc1.metric("القيمة السوقية (Market Cap)",
+                               f"${fundamentals['market_cap']:,.0f}" if fundamentals.get('market_cap') else "N/A")
+                    fc2.metric("حجم التداول (24 ساعة)",
+                               f"${fundamentals['volume_24h']:,.0f}" if fundamentals.get('volume_24h') else "N/A")
+                    fc3, fc4 = st.columns(2)
+                    fc3.metric("المعروض المتداول", f"{fundamentals['circulating_supply']:,.0f}" if fundamentals.get('circulating_supply') else "N/A")
+                    fc4.metric("أعلى/أدنى 52 أسبوع",
+                               f"{fundamentals['fifty_two_week_high']:,.2f} / {fundamentals['fifty_two_week_low']:,.2f}"
+                               if fundamentals.get('fifty_two_week_high') and fundamentals.get('fifty_two_week_low') else "N/A")
+                    st.caption(
+                        "⚠️ ده مش فاندمنتال بمعنى الشركات (مفيش أرباح/P/E لعملة رقمية) - "
+                        "دي بيانات المعروض والقيمة السوقية بس، أقرب مكافئ فعلي متاح."
+                    )
+
+                fig_deep = go.Figure()
+                fig_deep.add_trace(go.Scatter(x=result['df'].index, y=result['df']['Close'].squeeze(), name='السعر', line=dict(color='#1f77b4', width=2)))
+                fig_deep.add_trace(go.Scatter(x=result['df'].index, y=result['df']['EMA9'].squeeze(), name='EMA 9', line=dict(color='#2ca02c', dash='dot')))
+                fig_deep.add_trace(go.Scatter(x=result['df'].index, y=result['df']['EMA21'].squeeze(), name='EMA 21', line=dict(color='#d62728', dash='dash')))
+                fig_deep.update_layout(template="plotly_dark", height=420)
+                st.plotly_chart(fig_deep, use_container_width=True)
+
+                st.caption(
+                    "⚠️ أداة دعم قرار مش ضمان ربح، ومنفصلة تماماً عن Eagle Score الخاص بأسهم "
+                    "مصر (مفيش أي دمج بين الاتنين حالياً)."
+                )
