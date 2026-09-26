@@ -32,7 +32,10 @@ from eagle_core import (
 # Context إضافي بس في Decision Card - صفر تأثير على Eagle Score أو القرار
 # النهائي فوق (price_behavior_adjustment = 0 دايماً في هذه المرحلة، قسم 11).
 # ---------------------------------------------------------------------------
-from price_behavior_engine import build_price_behavior_context, format_decision_card_addition
+from price_behavior_engine import (
+    build_price_behavior_context, format_decision_card_addition,
+    compute_price_change_magnitude,
+)
 
 # ---------------------------------------------------------------------------
 # جلسة yfinance مضادة للحظر (Yahoo بيحظر السيرفرات المشتركة زي Streamlit Cloud)
@@ -2033,6 +2036,31 @@ with tab1:
                     e1.metric("التقلب اليومي (14 يوم)", f"{daily_vol_pct:.2f}%")
                     e2.metric("أيام الصعود المتتالية", f"{up_streak} يوم" if up_streak > 0 else "مفيش (آخر يوم كان هابط/ثابت)")
 
+                    # --- سادساً: بادچ الزخم متعدد الآجال (نفس تصنيف المسح الشامل بالضبط) ---
+                    _pb_mag = compute_price_change_magnitude(df)
+                    _weekly_pct = _pb_mag.get("5d_%")
+                    _monthly_pct = _pb_mag.get("20d_%")
+                    _price_up_today = bool(_pb_mag.get("daily_%") is not None and _pb_mag["daily_%"] > 0)
+                    _started_today = bool(_price_up_today and up_streak == 1)
+                    _bullish_all_tf = bool(_price_up_today and _weekly_pct is not None and _weekly_pct > 0 and _monthly_pct is not None and _monthly_pct > 0)
+                    _bearish_all_tf = bool((not _price_up_today) and _weekly_pct is not None and _weekly_pct < 0 and _monthly_pct is not None and _monthly_pct < 0)
+                    _momentum_tags = []
+                    if _started_today:
+                        _momentum_tags.append("🌅 بداية صعود اليوم بالذات")
+                    if _bullish_all_tf:
+                        _momentum_tags.append("📈 صعود متسق (يومي+أسبوعي+شهري)")
+                    if _bearish_all_tf:
+                        _momentum_tags.append("📉 نزول متسق (يومي+أسبوعي+شهري)")
+                    st.caption(
+                        f"🌱 سادساً - الزخم متعدد الآجال: "
+                        f"يومي {_pb_mag.get('daily_%'):+.2f}%، أسبوعي (5 جلسات) "
+                        f"{_weekly_pct:+.2f}%، شهري (20 جلسة) {_monthly_pct:+.2f}%"
+                        if _pb_mag.get("daily_%") is not None and _weekly_pct is not None and _monthly_pct is not None
+                        else "🌱 سادساً - الزخم متعدد الآجال: بيانات غير كافية لحساب التغير الأسبوعي/الشهري."
+                    )
+                    if _momentum_tags:
+                        st.caption("🏷️ " + " | ".join(_momentum_tags))
+
                     # --- تصنيف السهم حسب نفس الأقسام الأربعة بتاعة المسح الشامل ---
                     # (نفس الشرط بالظبط المستخدم في "مسح وترتيب السوق الاحترافي"،
                     # عشان أي سهم تشوفه هنا يبقى نفس تصنيفه هناك بالظبط)
@@ -2534,9 +2562,10 @@ with tab2:
         "bottom": "📥 ثانياً: رادار تصيد القيعان",
         "short_term": "⚡ ثالثاً: مضاربة لحظية ويومية",
         "long_term": "📈 رابعاً: استثمار واتجاه صاعد مستقر",
+        "momentum_multi_tf": "🌱 سادساً: الزخم متعدد الآجال (بداية صعود اليوم / صعود أو نزول يومي+أسبوعي+شهري)",
     }
     selected_categories_scan = st.multiselect(
-        "🗂️ عايز تشوف أي الأقسام بس؟ (سيبها فاضية أو اختار الكل لعرض الأربعة زي المعتاد)",
+        "🗂️ عايز تشوف أي الأقسام بس؟ (سيبها فاضية أو اختار الكل لعرض كل الأقسام زي المعتاد)",
         options=list(CATEGORY_OPTIONS.keys()),
         format_func=lambda k: CATEGORY_OPTIONS[k],
         default=list(CATEGORY_OPTIONS.keys()),
@@ -2547,6 +2576,11 @@ with tab2:
         bottom_accumulation_results = []
         short_term_trading = []
         long_term_investment = []
+        # سادساً: زخم متعدد الآجال - تصنيف مستقل ومنفصل عن الأربعة فوق (سهم
+        # واحد ممكن يظهر هنا وفي واحدة من الفئات فوق مع بعض، مش Either/Or)
+        momentum_started_today_results = []
+        momentum_bullish_all_tf_results = []
+        momentum_bearish_all_tf_results = []
         eagle_raw = {}  # ticker -> ingredients لازمة لحساب Relative/Sector Strength بعد ما المسح يخلص
         breadth_counts = {"advancing": 0, "declining": 0, "unchanged": 0}
 
@@ -2825,6 +2859,43 @@ with tab2:
                         "fundamentals_available": bool(eagle_components.get("fundamentals") is not None),
                     }
 
+                    # ===============================================================
+                    # سادساً: زخم متعدد الآجال - تصنيف مستقل عن الأربعة فوق (سهم ممكن
+                    # يظهر هنا وفي فئة تانية مع بعض، مش Either/Or زي الـelif اللي جاي).
+                    # بيستخدم compute_price_change_magnitude من price_behavior_engine.py
+                    # (Single Source of Truth - صفر إعادة حساب عوائد من الصفر هنا).
+                    #   - "بداية صعود اليوم": up_streak == 1 يعني النهارده أول يوم
+                    #     صاعد بعد يوم لم يكن صاعداً (Consecutive_Up_Days بترجع لـ1).
+                    #   - "صعود/نزول متسق": يومي + أسبوعي (5 جلسات) + شهري (20 جلسة)
+                    #     كلهم في نفس الاتجاه - مجرد Context/تصنيف عرض، مش توصية
+                    #     شراء/بيع مستقلة ومفيهوش تأثير على Eagle Score أو القرار النهائي.
+                    # ===============================================================
+                    pb_magnitude = compute_price_change_magnitude(stock_df)
+                    weekly_change_pct = pb_magnitude.get("5d_%")
+                    monthly_change_pct = pb_magnitude.get("20d_%")
+                    started_rising_today = bool(price_up_today and up_streak == 1)
+                    is_bullish_all_tf = bool(
+                        price_up_today and weekly_change_pct is not None and weekly_change_pct > 0
+                        and monthly_change_pct is not None and monthly_change_pct > 0
+                    )
+                    is_bearish_all_tf = bool(
+                        (not price_up_today) and weekly_change_pct is not None and weekly_change_pct < 0
+                        and monthly_change_pct is not None and monthly_change_pct < 0
+                    )
+
+                    momentum_entry = dict(data_entry)
+                    momentum_entry["التغير اليومي %"] = round(pb_magnitude.get("daily_%"), 2) if pb_magnitude.get("daily_%") is not None else None
+                    momentum_entry["التغير الأسبوعي % (5 جلسات)"] = round(weekly_change_pct, 2) if weekly_change_pct is not None else None
+                    momentum_entry["التغير الشهري % (20 جلسة)"] = round(monthly_change_pct, 2) if monthly_change_pct is not None else None
+
+                    if "momentum_multi_tf" in selected_categories_scan:
+                        if started_rising_today:
+                            momentum_started_today_results.append(dict(momentum_entry))
+                        if is_bullish_all_tf:
+                            momentum_bullish_all_tf_results.append(dict(momentum_entry))
+                        if is_bearish_all_tf:
+                            momentum_bearish_all_tf_results.append(dict(momentum_entry))
+
                     if is_new_cross and r < 52:
                         data_entry["التقييم الفني"] = "✨ تأسيس مركز (قاع صاعد طازة)"
                         if "fresh" in selected_categories_scan:
@@ -3036,6 +3107,39 @@ with tab2:
                             "💡 مرتبة حسب 'الدرجة الشاملة' = 60% فني + 40% مالي. "
                             "لو عمود مكرر الربحية P/E فاضي لسهم معين، يبقى Yahoo مارجعش بيانات مالية له."
                         )
+
+            if "momentum_multi_tf" in selected_categories_scan:
+                st.write("---")
+                st.markdown("### 🌱 سادساً: الزخم متعدد الآجال (يومي / أسبوعي / شهري)")
+                st.caption(
+                    "⚠️ تصنيف Context إضافي بس - مش توصية شراء/بيع مستقلة ومفيهوش تأثير على "
+                    "Eagle Score أو القرار النهائي. سهم ممكن يظهر هنا وفي فئة تانية فوق مع بعض "
+                    "(التصنيفات دي مش Either/Or)."
+                )
+
+                st.markdown("#### 🌅 سادساً-أ: أسهم بدأت صعودها اليوم بالذات (أول يوم صاعد بعد يوم غير صاعد)")
+                if momentum_started_today_results:
+                    _df = pd.DataFrame(momentum_started_today_results)
+                    _sort = EAGLE_COL if EAGLE_COL in _df.columns else "التغير اليومي %"
+                    st.dataframe(_df.sort_values(by=_sort, ascending=False), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم بدأت صعودها اليوم بالذات حسب الفلاتر الحالية.")
+
+                st.markdown("#### 📈 سادساً-ب: صعود متسق على كل الآجال (يومي + أسبوعي + شهري)")
+                if momentum_bullish_all_tf_results:
+                    _df = pd.DataFrame(momentum_bullish_all_tf_results)
+                    _sort = EAGLE_COL if EAGLE_COL in _df.columns else "التغير الشهري % (20 جلسة)"
+                    st.dataframe(_df.sort_values(by=_sort, ascending=False), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم صاعدة يومياً وأسبوعياً وشهرياً في نفس الوقت حسب الفلاتر الحالية.")
+
+                st.markdown("#### 📉 سادساً-ج: نزول متسق على كل الآجال (يومي + أسبوعي + شهري) - عكس البند السابق")
+                if momentum_bearish_all_tf_results:
+                    _df = pd.DataFrame(momentum_bearish_all_tf_results)
+                    _sort = "التغير الشهري % (20 جلسة)"
+                    st.dataframe(_df.sort_values(by=_sort, ascending=True), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم هابطة يومياً وأسبوعياً وشهرياً في نفس الوقت حسب الفلاتر الحالية.")
 
             # --- الملخص الشامل: التوصية النهائية (فني + مالي مع بعض) عبر كل الفئات ---
             st.markdown("---")
