@@ -36,6 +36,7 @@ from price_behavior_engine import (
     build_price_behavior_context, format_decision_card_addition,
     compute_price_change_magnitude,
 )
+import sector_historical_archive as sha
 
 # ---------------------------------------------------------------------------
 # جلسة yfinance مضادة للحظر (Yahoo بيحظر السيرفرات المشتركة زي Streamlit Cloud)
@@ -830,30 +831,30 @@ TICKER_SECTOR = {
     "CANA.CA": "بنوك", "JUFO.CA": "استهلاكي", "BTFH.CA": "مالي غير مصرفي", "IRON.CA": "تصنيع",
     "RAYA.CA": "تكنولوجيا", "FERC.CA": "تصنيع", "EGCH.CA": "تصنيع", "CIEB.CA": "بنوك",
     "FAIT.CA": "بنوك", "FAITA.CA": "بنوك", "GBCO.CA": "تصنيع", "OCDI.CA": "عقاري",
-    "HELI.CA": "عقاري", "VALU.CA": "مالي غير مصرفي", "EXPA.CA": "بنوك", "CLHO.CA": "استهلاكي",
+    "HELI.CA": "عقاري", "VALU.CA": "مالي غير مصرفي", "EXPA.CA": "بنوك", "CLHO.CA": "طبي",
     "EGTS.CA": "عقاري", "CCAP.CA": "مالي غير مصرفي", "ARCC.CA": "تصنيع", "EFIC.CA": "مالي غير مصرفي",
     "SKPC.CA": "تصنيع", "MCQE.CA": "تصنيع", "TAQA.CA": "تصنيع", "POUL.CA": "استهلاكي",
     "EGSA.CA": "تكنولوجيا", "MTIE.CA": "تكنولوجيا", "SCEM.CA": "تصنيع", "SAUD.CA": "بنوك",
     "ORWE.CA": "تصنيع", "CIRA.CA": "استهلاكي", "MASR.CA": "عقاري", "UBEE.CA": "بنوك",
-    "PHAR.CA": "استهلاكي", "MBSC.CA": "تصنيع", "MHOT.CA": "استهلاكي", "CICH.CA": "مالي غير مصرفي",
+    "PHAR.CA": "طبي", "MBSC.CA": "تصنيع", "MHOT.CA": "استهلاكي", "CICH.CA": "مالي غير مصرفي",
     "ISPH.CA": "استهلاكي", "EGBE.CA": "بنوك", "TALM.CA": "استهلاكي", "ATQA.CA": "تصنيع",
-    "MOIL.CA": "تصنيع", "AMOC.CA": "تصنيع", "BINV.CA": "عقاري", "RMDA.CA": "استهلاكي",
+    "MOIL.CA": "تصنيع", "AMOC.CA": "تصنيع", "BINV.CA": "عقاري", "RMDA.CA": "طبي",
     "IFAP.CA": "استهلاكي", "BONY.CA": "عقاري", "CSAG.CA": "تصنيع", "OLFI.CA": "استهلاكي",
-    "SPHT.CA": "استهلاكي", "NIPH.CA": "استهلاكي", "ISMQ.CA": "تصنيع", "MIPH.CA": "استهلاكي",
+    "SPHT.CA": "استهلاكي", "NIPH.CA": "طبي", "ISMQ.CA": "تصنيع", "MIPH.CA": "طبي",
     "OIH.CA": "مالي غير مصرفي", "ACAP.CA": "مالي غير مصرفي", "SUGR.CA": "استهلاكي", "EGAS.CA": "تصنيع",
-    "DOMT.CA": "استهلاكي", "ELEC.CA": "تصنيع", "MOIN.CA": "مالي غير مصرفي", "AMES.CA": "استهلاكي",
-    "PRDC.CA": "عقاري", "MPRC.CA": "تكنولوجيا", "BIOC.CA": "استهلاكي", "ZMID.CA": "عقاري",
-    "NAPR.CA": "تصنيع", "AXPH.CA": "استهلاكي", "NINH.CA": "استهلاكي", "CNFN.CA": "مالي غير مصرفي",
-    "GOUR.CA": "استهلاكي", "CPCI.CA": "استهلاكي", "SPIN.CA": "تصنيع", "PHTV.CA": "عقاري",
-    "ENGC.CA": "تصنيع", "DSCW.CA": "تصنيع", "MFSC.CA": "استهلاكي", "MPCI.CA": "استهلاكي",
-    "SVCE.CA": "تصنيع", "AMIA.CA": "مالي غير مصرفي", "GSSC.CA": "تصنيع", "OCPH.CA": "استهلاكي",
+    "DOMT.CA": "استهلاكي", "ELEC.CA": "تصنيع", "MOIN.CA": "مالي غير مصرفي", "AMES.CA": "طبي",
+    "PRDC.CA": "عقاري", "MPRC.CA": "تكنولوجيا", "BIOC.CA": "طبي", "ZMID.CA": "عقاري",
+    "NAPR.CA": "تصنيع", "AXPH.CA": "طبي", "NINH.CA": "طبي", "CNFN.CA": "مالي غير مصرفي",
+    "GOUR.CA": "استهلاكي", "CPCI.CA": "طبي", "SPIN.CA": "تصنيع", "PHTV.CA": "عقاري",
+    "ENGC.CA": "تصنيع", "DSCW.CA": "تصنيع", "MFSC.CA": "استهلاكي", "MPCI.CA": "طبي",
+    "SVCE.CA": "تصنيع", "AMIA.CA": "مالي غير مصرفي", "GSSC.CA": "تصنيع", "OCPH.CA": "طبي",
     "GDWA.CA": "عقاري", "MICH.CA": "تصنيع", "WCDF.CA": "استهلاكي", "SAIB.CA": "بنوك",
     "KABO.CA": "تصنيع", "UEFM.CA": "استهلاكي", "UNIT.CA": "عقاري", "ACAMD.CA": "عقاري",
     "ACTF.CA": "مالي غير مصرفي", "ARAB.CA": "عقاري", "OFH.CA": "مالي غير مصرفي", "AJWA.CA": "استهلاكي",
-    "AMER.CA": "عقاري", "KZPC.CA": "تصنيع", "ACGC.CA": "تصنيع", "ADCI.CA": "استهلاكي",
+    "AMER.CA": "عقاري", "KZPC.CA": "تصنيع", "ACGC.CA": "تصنيع", "ADCI.CA": "طبي",
     "CFGH.CA": "تصنيع", "ELSH.CA": "عقاري", "ASCM.CA": "تصنيع", "AFMC.CA": "استهلاكي",
     "ISMA.CA": "استهلاكي", "SDTI.CA": "مالي غير مصرفي", "ELKA.CA": "عقاري", "LCSW.CA": "تصنيع",
-    "GGRN.CA": "مالي غير مصرفي", "INFI.CA": "استهلاكي", "PHGC.CA": "استهلاكي", "SNFC.CA": "استهلاكي",
+    "GGRN.CA": "مالي غير مصرفي", "INFI.CA": "استهلاكي", "PHGC.CA": "طبي", "SNFC.CA": "استهلاكي",
     "NAHO.CA": "مالي غير مصرفي", "EDFM.CA": "استهلاكي", "ETRS.CA": "تصنيع", "SMFR.CA": "تصنيع",
     "ATLC.CA": "مالي غير مصرفي", "RACC.CA": "مالي غير مصرفي", "DAPH.CA": "عقاري", "EALR.CA": "استهلاكي",
     "ZEOT.CA": "استهلاكي", "ADPC.CA": "استهلاكي", "EHDR.CA": "عقاري", "IDRE.CA": "عقاري",
@@ -865,11 +866,11 @@ TICKER_SECTOR = {
     "MAAL.CA": "مالي غير مصرفي", "MEPA.CA": "استهلاكي", "NHPS.CA": "عقاري", "ALUM.CA": "تصنيع",
     "SEIGA.CA": "مالي غير مصرفي", "POCO.CA": "تصنيع", "COSG.CA": "استهلاكي", "AIDC.CA": "مالي غير مصرفي",
     "UEGC.CA": "مالي غير مصرفي", "RTVC.CA": "استهلاكي", "SEIG.CA": "مالي غير مصرفي", "EBSC.CA": "مالي غير مصرفي",
-    "PRMH.CA": "مالي غير مصرفي", "SIPC.CA": "استهلاكي", "GGCC.CA": "مالي غير مصرفي", "RREI.CA": "مالي غير مصرفي",
+    "PRMH.CA": "مالي غير مصرفي", "SIPC.CA": "طبي", "GGCC.CA": "مالي غير مصرفي", "RREI.CA": "مالي غير مصرفي",
     "CAED.CA": "استهلاكي", "GTEX.CA": "مالي غير مصرفي", "APSW.CA": "تصنيع", "AFDI.CA": "مالي غير مصرفي",
     "MEGM.CA": "تصنيع", "ICLE.CA": "مالي غير مصرفي", "ARVA.CA": "تصنيع", "ANFI.CA": "مالي غير مصرفي",
-    "TANM.CA": "مالي غير مصرفي", "MCRO.CA": "مالي غير مصرفي", "MOED.CA": "استهلاكي", "DTPP.CA": "تصنيع",
-    "KRDI.CA": "مالي غير مصرفي", "GTWL.CA": "تصنيع", "RAKT.CA": "تصنيع", "SPMD.CA": "استهلاكي",
+    "TANM.CA": "مالي غير مصرفي", "MCRO.CA": "طبي", "MOED.CA": "استهلاكي", "DTPP.CA": "تصنيع",
+    "KRDI.CA": "مالي غير مصرفي", "GTWL.CA": "تصنيع", "RAKT.CA": "تصنيع", "SPMD.CA": "طبي",
     "UNIP.CA": "تصنيع", "RUBX.CA": "تصنيع", "ROTO.CA": "استهلاكي", "KWIN.CA": "مالي غير مصرفي",
     "ASPI.CA": "مالي غير مصرفي", "ICID.CA": "مالي غير مصرفي", "AIHC.CA": "مالي غير مصرفي", "AREH.CA": "عقاري",
     "EEII.CA": "تصنيع", "CCRS.CA": "مالي غير مصرفي", "EASB.CA": "مالي غير مصرفي", "GRCA.CA": "مالي غير مصرفي",
@@ -2024,6 +2025,40 @@ def fetch_batch_data(tickers_tuple: tuple, period: str = "1y"):
 
     return all_frames, failed
 
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_sector_member_histories(tickers_tuple: tuple, market_key: str, years: int = 5):
+    """
+    مخصصة لـ"الأرشيف التاريخي للقطاعات" (tab5) - محتاجة تاريخ **سنين طويلة**
+    (عشان تشمل أكتر من نافذة صعود/نزول)، على عكس fetch_batch_data اللي
+    بتثبّت n_bars=260 (سنة واحدة تقريباً) لأسهم مصر دايماً بغض النظر عن
+    period المطلوبة. هنا بنستخدم fetch_egx_history_tv مباشرة بعدد جلسات
+    أكبر لمصر، وyf.download بـperiod={years}y للباقي (نفس الجلسة المضادة
+    للحظر YF_SESSION في كل الحالات - Single Source of Truth لآلية الجلب).
+
+    يرجع dict {ticker: DataFrame} للأسهم اللي نجح جلبها بس (فشل هادئ لكل
+    سهم لوحده - سهم واحد بايظ ميوقفش باقي القطاع).
+    """
+    tickers = list(tickers_tuple)
+    frames = {}
+    n_bars = min(years * 260, 1300)  # تقريباً 260 جلسة تداول/سنة، سقف احترازي
+
+    for t in tickers:
+        try:
+            if t.endswith(".CA"):
+                df_t = fetch_egx_history_tv(t, n_bars=n_bars)
+            else:
+                df_t = yf.download(resolve_symbol(t), period=f"{years}y", progress=False, session=YF_SESSION)
+            if df_t is not None and not df_t.dropna(how="all").empty:
+                frames[t] = df_t
+        except Exception:
+            pass
+        if not t.endswith(".CA"):
+            time.sleep(0.15)  # فاصل بسيط بين طلبات yfinance المنفردة
+
+    return frames
+
+
 _WATCHLIST_CSV = "watchlist.csv"
 
 
@@ -2064,9 +2099,9 @@ with st.sidebar.expander(f"⭐ المفضّلة ({len(watchlist)} سهم)"):
                 st.rerun()
     st.caption("💡 لاستخدام المفضّلة في المسح الشامل، انسخ الرموز فوق والصقها في قائمة الأسهم بتاب المسح.")
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🔍 فحص سهم تفصيلي + رسم بياني", "🏆 مسح وترتيب السوق الاحترافي", "💼 محفظتي",
-    "🌍 الأسواق العالمية + الذهب/الفضة",
+    "🌍 الأسواق العالمية + الذهب/الفضة", "🗄️ الأرشيف التاريخي للقطاعات",
 ])
 
 with tab1:
@@ -3690,4 +3725,124 @@ with tab4:
                 st.caption(
                     "⚠️ أداة دعم قرار مش ضمان ربح، ومنفصلة تماماً عن Eagle Score الخاص بأسهم "
                     "مصر (مفيش أي دمج بين الاتنين حالياً)."
+                )
+
+with tab5:
+    st.subheader("🗄️ الأرشيف التاريخي للقطاعات")
+    st.caption(
+        "بدل تحليل سهم لوحده - بيبني مؤشر قطاعي مجمّع (Equal-Weighted) من كل أسهم القطاع "
+        "(مثلاً القطاع الطبي = كل المستشفيات وشركات الأدوية مع بعض)، وبيمسح تاريخه بالكامل "
+        "لتحديد نوافذ الصعود والنزول التاريخية: 'من تاريخ X لتاريخ Y، القطاع كله صعد/نزل كام %'. "
+        "⚠️ محتاج تحميل تاريخ سنين لكل سهم في القطاع - ممكن ياخد وقت حسب حجم القطاع."
+    )
+
+    ac1, ac2, ac3 = st.columns(3)
+    with ac1:
+        archive_market = st.selectbox(
+            "السوق:", options=list(MARKETS.keys()),
+            format_func=lambda k: MARKETS[k]["label"], key="archive_market",
+        )
+    sector_map_archive = MARKETS[archive_market]["sector_map"]
+    available_sectors_archive = sorted(set(sector_map_archive.values()))
+    with ac2:
+        archive_sector = st.selectbox("القطاع:", options=available_sectors_archive, key="archive_sector")
+    with ac3:
+        archive_years = st.slider("عدد سنين التاريخ:", min_value=2, max_value=8, value=5, key="archive_years")
+
+    sector_tickers = sorted([t for t, s in sector_map_archive.items() if s == archive_sector])
+    preview = ", ".join(sector_tickers[:15]) + (" ..." if len(sector_tickers) > 15 else "")
+    st.caption(f"عدد الأسهم في قطاع '{archive_sector}': {len(sector_tickers)} — {preview}")
+
+    with st.expander("⚙️ إعدادات تعريف 'بداية صعود/نزول القطاع' (التلات معايير مجتمعة)"):
+        adv1, adv2 = st.columns(2)
+        with adv1:
+            archive_min_duration = st.number_input(
+                "أقل مدة للنافذة (جلسة تداول):", min_value=3, max_value=60,
+                value=sha.DEFAULT_MIN_DURATION_DAYS, key="archive_min_duration",
+            )
+        with adv2:
+            archive_min_return = st.number_input(
+                "أقل نسبة تغيّر مطلوبة %:", min_value=1.0, max_value=100.0,
+                value=sha.DEFAULT_MIN_RETURN_PCT, step=1.0, key="archive_min_return",
+            )
+        archive_only_confirmed = st.checkbox(
+            "اعرض بس النوافذ 'مؤكدة بالكامل' (محققة التلات معايير مع بعض)",
+            value=False, key="archive_only_confirmed",
+        )
+        st.caption(
+            "المعيار التالت (تأكيد فني EMA9/21) مُطبَّق دايماً - النافذة اللي بتحقق التلات "
+            "معايير تُوصف '🟢 مؤكدة بالكامل'، واللي بتحقق بعضها بس '🟡 جزئية' (بتُعرض بوضوح "
+            "مش مخفية أو مقدَّمة كمؤكدة وهي مش كذلك)."
+        )
+
+    if st.button("🔍 بناء الأرشيف التاريخي لهذا القطاع", key="build_archive_btn"):
+        if len(sector_tickers) < 2:
+            st.warning("⚪ القطاع ده فيه أقل من سهمين - مينفعش نبني مؤشر قطاعي بسهم واحد بس.")
+        else:
+            with st.spinner(f"جاري تحميل تاريخ {len(sector_tickers)} سهم وبناء المؤشر القطاعي..."):
+                price_frames = fetch_sector_member_histories(tuple(sector_tickers), archive_market, years=archive_years)
+                if len(price_frames) < 2:
+                    archive_result = {"available": False, "reason": f"فشل جلب تاريخ كافي لأقل من سهمين في القطاع (نجح {len(price_frames)} بس)."}
+                else:
+                    archive_result = sha.build_sector_archive(
+                        price_frames, sector_name=archive_sector, market_label=MARKETS[archive_market]["label"],
+                        min_duration_days=archive_min_duration, min_return_pct=archive_min_return,
+                        only_confirmed=archive_only_confirmed,
+                    )
+
+            if not archive_result.get("available"):
+                st.warning(f"⚪ {archive_result.get('reason')}")
+            else:
+                st.success(
+                    f"✅ تم بناء مؤشر قطاع '{archive_sector}' من {archive_result['member_count']} سهم نجح جلبهم "
+                    f"({pd.Timestamp(archive_result['index_start']).date()} → {pd.Timestamp(archive_result['index_end']).date()})"
+                )
+
+                idx_df = archive_result["sector_index_df"]
+                fig_sector = go.Figure()
+                fig_sector.add_trace(go.Scatter(
+                    x=idx_df.index, y=idx_df["Close"], name="مؤشر القطاع (Equal-Weighted)",
+                    line=dict(color="#f1c40f", width=2),
+                ))
+                for w in archive_result["up_windows"]:
+                    fig_sector.add_vrect(x0=w["start_date"], x1=w["end_date"], fillcolor="green", opacity=0.15, line_width=0)
+                for w in archive_result["down_windows"]:
+                    fig_sector.add_vrect(x0=w["start_date"], x1=w["end_date"], fillcolor="red", opacity=0.15, line_width=0)
+                fig_sector.update_layout(
+                    template="plotly_dark", height=420,
+                    title=f"مؤشر قطاع {archive_sector} (مُطبَّع = 100 في بداية التاريخ المتاح) - أخضر=نافذة صعود، أحمر=نافذة نزول",
+                )
+                st.plotly_chart(fig_sector, use_container_width=True)
+
+                st.markdown("###### 📈 نوافذ الصعود التاريخية")
+                if archive_result["up_windows"]:
+                    up_df = pd.DataFrame([{
+                        "من تاريخ": pd.Timestamp(w["start_date"]).date(),
+                        "لحد تاريخ": pd.Timestamp(w["end_date"]).date(),
+                        "المدة (جلسة)": w["duration_days"], "نسبة الصعود %": w["return_pct"],
+                        "تأكيد EMA": f"{w['ema_confirmation_ratio']*100:.0f}%" if w["ema_confirmation_ratio"] is not None else "N/A",
+                        "درجة الثقة": w["strength"],
+                    } for w in archive_result["up_windows"]])
+                    st.dataframe(up_df.sort_values("نسبة الصعود %", ascending=False), use_container_width=True, hide_index=True)
+                else:
+                    st.info("لا توجد نوافذ صعود مطابقة للشروط الحالية.")
+
+                st.markdown("###### 📉 نوافذ النزول التاريخية (العكس)")
+                if archive_result["down_windows"]:
+                    down_df = pd.DataFrame([{
+                        "من تاريخ": pd.Timestamp(w["start_date"]).date(),
+                        "لحد تاريخ": pd.Timestamp(w["end_date"]).date(),
+                        "المدة (جلسة)": w["duration_days"], "نسبة النزول %": w["return_pct"],
+                        "تأكيد EMA": f"{w['ema_confirmation_ratio']*100:.0f}%" if w["ema_confirmation_ratio"] is not None else "N/A",
+                        "درجة الثقة": w["strength"],
+                    } for w in archive_result["down_windows"]])
+                    st.dataframe(down_df.sort_values("نسبة النزول %", ascending=True), use_container_width=True, hide_index=True)
+                else:
+                    st.info("لا توجد نوافذ نزول مطابقة للشروط الحالية.")
+
+                st.caption(
+                    "⚠️ '🟢 مؤكدة بالكامل' = محققة التلات معايير مع بعض (مدة كافية + نسبة تغيّر "
+                    "كافية + تأكيد فني EMA9/21). '🟡 جزئية' = محققة بعض المعايير بس. ده أرشيف "
+                    "وصفي تاريخي بحت - مش توصية شراء/بيع، ومفيهوش أي تأثير على Eagle Score أو "
+                    "القرار النهائي لأي سهم."
                 )
