@@ -3846,3 +3846,106 @@ with tab5:
                     "وصفي تاريخي بحت - مش توصية شراء/بيع، ومفيهوش أي تأثير على Eagle Score أو "
                     "القرار النهائي لأي سهم."
                 )
+
+    st.markdown("---")
+    st.markdown("### 🔮 توقع موسمي: أي القطاعات/الأصول متوقع صعودها الفترة الجاية؟")
+    st.caption(
+        "بيحلل تاريخ كل قطاع/أصل عبر عدة سنين، ويحسب: 'الشهر الجاي/القادم ده، كان صاعد في "
+        "كام سنة من السنين اللي فاتت؟' - بيستخدم **نفس** دالة الموسمية الشهرية من "
+        "egx_historical_analyzer.py (صفر منطق جديد). ⚠️ **ده ميل تاريخي إحصائي بحت - مش "
+        "تنبؤ مضمون ولا توصية شراء/بيع.** شهر صاعد في 4 من 5 سنين سابقة ممكن يبقى هابط في "
+        "السنة الجاية بسهولة - الأسواق بتتغيّر والماضي لا يضمن المستقبل."
+    )
+
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        forecast_markets = st.multiselect(
+            "قطاعات الأسهم (اختياري):", options=list(MARKETS.keys()),
+            format_func=lambda k: MARKETS[k]["label"], key="forecast_markets",
+        )
+    with fc2:
+        forecast_global_cats = st.multiselect(
+            "الأصول العالمية:", options=["crypto", "metals", "fx", "energy"],
+            format_func=lambda k: {
+                "crypto": "₿ عملات رقمية", "metals": "🥇 معادن",
+                "fx": "💱 عملات أجنبية", "energy": "🛢️ طاقة",
+            }[k],
+            default=["crypto", "metals", "fx"], key="forecast_global_cats",
+        )
+    with fc3:
+        forecast_months_ahead = st.slider("عدد الشهور القادمة:", min_value=1, max_value=3, value=1, key="forecast_months_ahead")
+
+    forecast_sample_cap = st.number_input(
+        "أقصى عدد أسهم يُجلب لكل قطاع (لتسريع الحساب - عيّنة من القطاع مش كل الأعضاء بالضرورة):",
+        min_value=5, max_value=50, value=15, key="forecast_sample_cap",
+    )
+
+    if st.button("🔮 احسب التوقع الموسمي الشامل", key="run_forecast_btn"):
+        if not forecast_markets and not forecast_global_cats:
+            st.warning("⚪ اختار على الأقل سوق واحد أو نوع أصل عالمي واحد.")
+        else:
+            tasks = []
+            for mk in forecast_markets:
+                sector_map_fc = MARKETS[mk]["sector_map"]
+                for sec in sorted(set(sector_map_fc.values())):
+                    sec_tickers = sorted([t for t, s in sector_map_fc.items() if s == sec])[:forecast_sample_cap]
+                    tasks.append(("sector", mk, sec, sec_tickers))
+            cat_labels = {"crypto": "₿ عملات رقمية", "metals": "🥇 معادن", "fx": "💱 عملات أجنبية", "energy": "🛢️ طاقة"}
+            for cat in forecast_global_cats:
+                for name, ticker in GLOBAL_ASSETS[cat].items():
+                    tasks.append(("global", cat, name, [ticker]))
+
+            archive_results = []
+            progress_fc = st.progress(0.0)
+            total_fc = max(len(tasks), 1)
+            for i, (kind, mk_or_cat, label, tickers) in enumerate(tasks):
+                progress_fc.progress((i + 1) / total_fc, text=f"جاري تحليل: {label} ({i + 1}/{total_fc})")
+                if kind == "sector":
+                    frames_fc = fetch_sector_member_histories(tuple(tickers), mk_or_cat, years=6)
+                    min_members_fc = 2
+                    category_disp = f"قطاع ({MARKETS[mk_or_cat]['label']})"
+                else:
+                    try:
+                        df_single_fc = fetch_single_stock(tickers[0], period="6y")
+                    except Exception:
+                        df_single_fc = None
+                    frames_fc = {tickers[0]: df_single_fc} if (df_single_fc is not None and not df_single_fc.empty) else {}
+                    min_members_fc = 1
+                    category_disp = cat_labels[mk_or_cat]
+
+                if len(frames_fc) < min_members_fc:
+                    continue
+
+                res_fc = sha.build_sector_archive(
+                    frames_fc, sector_name=label, market_label=mk_or_cat,
+                    min_members=min_members_fc, include_seasonality=True,
+                )
+                if res_fc.get("available"):
+                    res_fc["label"] = label
+                    res_fc["category"] = category_disp
+                    archive_results.append(res_fc)
+
+            progress_fc.empty()
+
+            if not archive_results:
+                st.warning("⚪ مفيش نتايج كافية - جرب تقلل عدد القطاعات/الأصول المختارة أو جرب تاني بعد شوية.")
+            else:
+                ranked = sha.rank_upcoming_outlook(archive_results, months_ahead=forecast_months_ahead)
+                if ranked.empty:
+                    st.info("مفيش بيانات موسمية كافية (تاريخ قصير) للعناصر المختارة.")
+                else:
+                    st.markdown("###### 📊 الترتيب (نسبة الصعود التاريخية - الأعلى أولاً)")
+                    display_cols = {
+                        "label": "القطاع/الأصل", "category": "النوع", "month_name_ar": "الشهر",
+                        "win_rate_%": "نسبة الصعود التاريخية %", "avg_return_%": "متوسط العائد اليومي %",
+                        "years_analyzed": "عدد سنين العينة", "note": "ملاحظة",
+                    }
+                    display_df = ranked[[c for c in display_cols if c in ranked.columns]].rename(columns=display_cols)
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+                st.caption(
+                    "⚠️ 'نسبة الصعود التاريخية' = نسبة السنين اللي كان فيها هذا الشهر صاعد، من "
+                    "إجمالي سنين البيانات المتاحة لهذا القطاع/الأصل. عيّنة أقل من 3 سنين "
+                    "غير موثوقة إحصائياً (مُعلَّمة في عمود الملاحظة - مش مخفية). هذا تحليل وصفي "
+                    "تاريخي بحت، ومفيهوش أي تأثير على Eagle Score أو القرار النهائي لأي سهم أو أصل."
+                )
