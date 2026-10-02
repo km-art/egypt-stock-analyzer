@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 import sector_historical_archive as sha
+import eagle_core as ec
 
 FAILURES = []
 
@@ -150,17 +151,94 @@ def test_only_confirmed_filter():
         )
 
 
+def test_single_asset_archive_min_members_1():
+    """كريبتو/معدن/عملة - أصل واحد بس، مفيش 'قطاع' حقيقي (min_members=1)."""
+    path = _engineered_sector_path(n=400, seed=50)
+    frames = {"BTC-USD": _make_ohlcv(path)}
+    result = sha.build_sector_archive(frames, sector_name="كريبتو تجريبي", market_label="كريبتو", min_members=1)
+    _check("test_single_asset_archive_min_members_1_available", result.get("available") is True, detail=str(result.get("reason")))
+    if result.get("available"):
+        _check("test_single_asset_archive_has_up_windows", len(result["up_windows"]) >= 1, detail=str(result["up_windows"]))
+
+
+def test_single_asset_archive_rejects_without_min_members_override():
+    path = _engineered_sector_path(n=400, seed=51)
+    frames = {"BTC-USD": _make_ohlcv(path)}
+    result = sha.build_sector_archive(frames, sector_name="كريبتو تجريبي2", market_label="كريبتو")  # الافتراضي min_members=2
+    _check("test_single_asset_archive_rejects_without_override", result.get("available") is False, detail=str(result))
+
+
+def _make_multi_year_ohlcv(years=6, seed=60, seasonal_bias_month=None, bias_strength=0.0015):
+    """
+    مسار سعري متعدد السنين - لو seasonal_bias_month محدد، بيضيف انحياز
+    صعودي ثابت في هذا الشهر عبر كل السنين (عشان نختبر إن الموسمية فعلاً
+    بتلتقط نمط حقيقي مُدخَل، مش بس ضوضاء عشوائية).
+    """
+    rng = np.random.default_rng(seed)
+    n_days = years * 260
+    idx = pd.bdate_range("2018-01-01", periods=n_days)
+    path = [100.0]
+    for d in idx[1:]:
+        drift = bias_strength if (seasonal_bias_month is not None and d.month == seasonal_bias_month) else 0.0002
+        path.append(path[-1] * (1 + drift + rng.normal(0, 0.01)))
+    return pd.DataFrame({
+        "Open": path, "High": np.array(path) * 1.005, "Low": np.array(path) * 0.995,
+        "Close": path, "Volume": np.full(n_days, 1_000_000.0),
+    }, index=idx)
+
+
+def test_seasonality_detects_injected_monthly_bias():
+    df = _make_multi_year_ohlcv(years=6, seed=70, seasonal_bias_month=7, bias_strength=0.0025)  # يوليو منحاز صعودياً بقوة
+    indexed = ec.calculate_indicators(df)
+    seasonality = sha.compute_seasonality(indexed)
+    july_stats = seasonality.get("July", {})
+    _check(
+        "test_seasonality_detects_injected_monthly_bias",
+        july_stats.get("status") == "OK" and july_stats.get("mean_daily_return_%", 0) > 0,
+        detail=str(july_stats),
+    )
+
+
+def test_upcoming_months_outlook_structure():
+    df = _make_multi_year_ohlcv(years=5, seed=71)
+    indexed = ec.calculate_indicators(df)
+    seasonality = sha.compute_seasonality(indexed)
+    outlook = sha.upcoming_months_outlook(seasonality, as_of_date="2024-01-15", months_ahead=2)
+    _check("test_upcoming_months_outlook_length", len(outlook) == 2, detail=str(outlook))
+    if len(outlook) == 2:
+        _check("test_upcoming_months_outlook_order", outlook[0]["month_number"] == 2 and outlook[1]["month_number"] == 3,
+               detail=str([o["month_number"] for o in outlook]))
+        _check("test_upcoming_months_outlook_has_arabic_name", outlook[0]["month_name_ar"] == "فبراير", detail=outlook[0]["month_name_ar"])
+
+
+def test_rank_upcoming_outlook_sorted_descending():
+    df_high = _make_multi_year_ohlcv(years=6, seed=80, seasonal_bias_month=3, bias_strength=0.003)
+    df_low = _make_multi_year_ohlcv(years=6, seed=81, seasonal_bias_month=None)
+    res_high = sha.build_sector_archive({"A": df_high, "B": df_high * 1.0}, "قطاع قوي", "اختبار")
+    res_low = sha.build_sector_archive({"A": df_low, "B": df_low * 1.0}, "قطاع عادي", "اختبار")
+    res_high["label"], res_high["category"] = "قطاع قوي", "اختبار"
+    res_low["label"], res_low["category"] = "قطاع عادي", "اختبار"
+
+    ranked = sha.rank_upcoming_outlook([res_high, res_low], as_of_date="2024-02-15", months_ahead=1)
+    _check("test_rank_upcoming_outlook_nonempty", not ranked.empty, detail=str(ranked))
+    if not ranked.empty:
+        _check("test_rank_upcoming_outlook_sorted", list(ranked["win_rate_%"]) == sorted(ranked["win_rate_%"].fillna(-1), reverse=True),
+               detail=str(ranked["win_rate_%"].tolist()))
+
+
 def test_no_duplicate_indicator_logic():
-    """نفس مبدأ اختبارات الهوية في المشروع - نتأكد إن الملف مش بيعرّف أي دالة من دوال eagle_core."""
+    """نفس مبدأ اختبارات الهوية في المشروع - نتأكد إن الملف مش بيعرّف أي دالة من دوال eagle_core أو egx_historical_analyzer."""
     with open("sector_historical_archive.py", encoding="utf-8") as f:
         source = f.read()
     protected_names = [
         "def calculate_indicators", "def find_support_resistance",
         "def compute_eagle_score", "def make_final_decision",
+        "def prepare_daily_features", "def analyze_monthly_seasonality",
     ]
     duplicates = [n for n in protected_names if n in source]
     _check("test_no_duplicate_indicator_logic", not duplicates, detail=str(duplicates))
     _check("test_uses_eagle_core_calculate_indicators", "ec.calculate_indicators(" in source)
+    _check("test_uses_egx_historical_analyzer_seasonality", "eha.analyze_monthly_seasonality(" in source)
 
 
 if __name__ == "__main__":
@@ -168,6 +246,9 @@ if __name__ == "__main__":
         test_build_sector_index_basic, test_build_sector_index_insufficient_members,
         test_detect_rally_window_found, test_detect_decline_window_found,
         test_ema_confirmation_present_for_strong_trend, test_only_confirmed_filter,
+        test_single_asset_archive_min_members_1, test_single_asset_archive_rejects_without_min_members_override,
+        test_seasonality_detects_injected_monthly_bias, test_upcoming_months_outlook_structure,
+        test_rank_upcoming_outlook_sorted_descending,
         test_no_duplicate_indicator_logic,
     ]
     for t in tests:
