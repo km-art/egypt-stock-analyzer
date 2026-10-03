@@ -2099,9 +2099,10 @@ with st.sidebar.expander(f"⭐ المفضّلة ({len(watchlist)} سهم)"):
                 st.rerun()
     st.caption("💡 لاستخدام المفضّلة في المسح الشامل، انسخ الرموز فوق والصقها في قائمة الأسهم بتاب المسح.")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🔍 فحص سهم تفصيلي + رسم بياني", "🏆 مسح وترتيب السوق الاحترافي", "💼 محفظتي",
     "🌍 الأسواق العالمية + الذهب/الفضة", "🗄️ الأرشيف التاريخي للقطاعات",
+    "📅 آخر إغلاقات (سريع)",
 ])
 
 with tab1:
@@ -3949,3 +3950,74 @@ with tab5:
                     "غير موثوقة إحصائياً (مُعلَّمة في عمود الملاحظة - مش مخفية). هذا تحليل وصفي "
                     "تاريخي بحت، ومفيهوش أي تأثير على Eagle Score أو القرار النهائي لأي سهم أو أصل."
                 )
+
+with tab6:
+    st.subheader("📅 آخر أسعار إغلاق - عرض سريع")
+    st.caption(
+        "عرض سريع لأسعار الإغلاق لآخر عدد أيام تختاره (حتى أسبوع/7 جلسات تداول) - "
+        "لأي سهم مصري/أمريكي/إماراتي، أو عملة رقمية، أو معدن، أو عملة أجنبية."
+    )
+
+    qc1, qc2 = st.columns(2)
+    with qc1:
+        quick_asset_type = st.radio(
+            "نوع الأصل:", options=["stock", "crypto", "metals", "fx"],
+            format_func=lambda k: {
+                "stock": "📈 سهم", "crypto": "₿ عملة رقمية",
+                "metals": "🥇 معدن", "fx": "💱 عملة أجنبية",
+            }[k],
+            horizontal=True, key="quick_asset_type",
+        )
+    with qc2:
+        quick_days = st.slider("عدد الجلسات السابقة (أقصاها أسبوع):", min_value=1, max_value=7, value=5, key="quick_days")
+
+    if quick_asset_type == "stock":
+        qm1, qm2 = st.columns(2)
+        with qm1:
+            quick_market = st.selectbox(
+                "السوق:", options=list(MARKETS.keys()),
+                format_func=lambda k: MARKETS[k]["label"], key="quick_market",
+            )
+        stocks_dict_quick = MARKETS[quick_market]["stocks"]
+        with qm2:
+            quick_stock_name = st.selectbox("السهم:", options=list(stocks_dict_quick.keys()), key="quick_stock_name")
+        quick_ticker = stocks_dict_quick[quick_stock_name]
+        quick_label = quick_stock_name
+    else:
+        quick_options = GLOBAL_ASSETS[quick_asset_type]
+        quick_name = st.selectbox("الأصل:", options=list(quick_options.keys()), key="quick_global_name")
+        quick_ticker = quick_options[quick_name]
+        quick_label = quick_name
+
+    if st.button("🔍 عرض آخر الإغلاقات", key="quick_closes_btn"):
+        with st.spinner(f"جاري جلب آخر أسعار {quick_label}..."):
+            try:
+                df_quick = fetch_single_stock(quick_ticker, period="60d")
+            except Exception:
+                df_quick = None
+
+        if df_quick is None or df_quick.empty:
+            st.warning("⚪ تعذر جلب بيانات لهذا الأصل دلوقتي - جرب تاني بعد شوية.")
+        else:
+            close_series = df_quick["Close"].squeeze() if hasattr(df_quick["Close"], "squeeze") else df_quick["Close"]
+            close_series = close_series.dropna().tail(quick_days)
+
+            if close_series.empty:
+                st.warning("⚪ مفيش بيانات كافية لهذا الأصل.")
+            else:
+                decimals = 4 if quick_asset_type == "fx" else 2
+                currency_label = get_currency(quick_ticker) if quick_asset_type == "stock" else ("$" if quick_asset_type in ("crypto", "metals") else "")
+
+                rows, prev_val = [], None
+                for d, v in close_series.items():
+                    change_pct = round(((float(v) / float(prev_val)) - 1) * 100, 2) if prev_val else None
+                    rows.append({
+                        "التاريخ": pd.Timestamp(d).date(),
+                        f"سعر الإغلاق{' (' + currency_label + ')' if currency_label else ''}": round(float(v), decimals),
+                        "التغيّر عن الجلسة السابقة %": change_pct,
+                    })
+                    prev_val = v
+
+                result_df = pd.DataFrame(rows).sort_values("التاريخ", ascending=False)
+                st.dataframe(result_df, use_container_width=True, hide_index=True)
+                st.caption(f"📌 {quick_label} ({quick_ticker}) — آخر {len(result_df)} جلسة تداول متاحة من المصدر.")
