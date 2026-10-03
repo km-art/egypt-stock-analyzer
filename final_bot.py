@@ -3999,6 +3999,12 @@ with tab6:
         if df_quick is None or df_quick.empty:
             st.warning("⚪ تعذر جلب بيانات لهذا الأصل دلوقتي - جرب تاني بعد شوية.")
         else:
+            # yf.download بـgroup_by='ticker' بيرجّع أعمدة MultiIndex لغير أسهم مصر -
+            # لازم تتبسّط (flatten) قبل df_quick["Close"]، زي بالضبط eagle_core.calculate_indicators
+            # (Single Source of Truth لنفس المنطق، مش نسخة جديدة).
+            if isinstance(df_quick.columns, pd.MultiIndex):
+                df_quick.columns = df_quick.columns.get_level_values(-1)
+
             close_series = df_quick["Close"].squeeze() if hasattr(df_quick["Close"], "squeeze") else df_quick["Close"]
             close_series = close_series.dropna().tail(quick_days)
 
