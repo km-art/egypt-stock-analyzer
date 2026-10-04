@@ -2709,12 +2709,20 @@ with tab2:
             help="Risk/Reward = المكسب المحتمل (للهدف) ÷ الخسارة المحتملة (لوقف الخسارة). 2 يعني المكسب المتوقع ضعف المخاطرة.",
         )
 
+    whale_cheap_price_threshold = st.number_input(
+        f"🐋 سابعاً - الحد الأقصى لسعر السهم عشان يُعتبر 'رخيص' ({currency_label_scan}):",
+        min_value=0.1, value=10.0, step=0.5, key="whale_cheap_price_threshold",
+        help="يُستخدم بس لو فعّلت قسم 'سابعاً: تجميع حيتان في الأسهم الرخيصة' تحت. "
+             "في مسح متعدد الأسواق، الرقم بيُقارن بسعر السهم بعملته المحلية مباشرة.",
+    )
+
     CATEGORY_OPTIONS = {
         "fresh": "🚀 أولاً: تأسيس مركز جديدة (قاع صاعد طازة)",
         "bottom": "📥 ثانياً: رادار تصيد القيعان",
         "short_term": "⚡ ثالثاً: مضاربة لحظية ويومية",
         "long_term": "📈 رابعاً: استثمار واتجاه صاعد مستقر",
         "momentum_multi_tf": "🌱 سادساً: الزخم متعدد الآجال (بداية صعود اليوم / صعود أو نزول يومي+أسبوعي+شهري)",
+        "whale_accumulation_cheap": "🐋 سابعاً: تجميع حيتان في الأسهم الرخيصة",
     }
     selected_categories_scan = st.multiselect(
         "🗂️ عايز تشوف أي الأقسام بس؟ (سيبها فاضية أو اختار الكل لعرض كل الأقسام زي المعتاد)",
@@ -2733,6 +2741,8 @@ with tab2:
         momentum_started_today_results = []
         momentum_bullish_all_tf_results = []
         momentum_bearish_all_tf_results = []
+        # سابعاً: تجميع حيتان في الأسهم الرخيصة - مستقل برضو عن الفئات التانية
+        whale_accumulation_results = []
         eagle_raw = {}  # ticker -> ingredients لازمة لحساب Relative/Sector Strength بعد ما المسح يخلص
         breadth_counts = {"advancing": 0, "declining": 0, "unchanged": 0}
 
@@ -3010,6 +3020,29 @@ with tab2:
                         "price_up_today": price_up_today,
                         "fundamentals_available": bool(eagle_components.get("fundamentals") is not None),
                     }
+
+                    # ===============================================================
+                    # سابعاً: تجميع حيتان في الأسهم الرخيصة - مستقل تماماً عن باقي
+                    # الفئات (سهم ممكن يظهر هنا وفي فئة تانية مع بعض). بيستخدم
+                    # _score_accumulation_distribution الموجودة فعلاً في eagle_core.py
+                    # (مبنية على ميل خط A/D Line خلال آخر 10 جلسات، مُطبَّع بحجم التداول) -
+                    # صفر منطق جديد. "رخيص" = سعر السهم <= الحد اللي اختاره المستخدم.
+                    # تعريف "تجميع حيتان": درجة A/D >= 3.5 (ميل تراكمي صاعد واضح) +
+                    # RVOL >= 1.1 (حجم تداول حقيقي فوق المتوسط، مش سكون بلا اهتمام).
+                    # ⚠️ Context/تصنيف وصفي بس - مش توصية شراء، ومفيهوش تأكيد إن ده
+                    # فعلاً "حيتان" بالمعنى الحرفي (محدش يملك بيانات ملكية فعلية هنا).
+                    # ===============================================================
+                    if "whale_accumulation_cheap" in selected_categories_scan:
+                        accum_score = eagle_components.get("accumulation_distribution")
+                        is_cheap_price = p <= whale_cheap_price_threshold
+                        is_whale_accumulation = bool(
+                            is_cheap_price and accum_score is not None and accum_score >= 3.5 and rvol >= 1.1
+                        )
+                        if is_whale_accumulation:
+                            whale_entry = dict(data_entry)
+                            whale_entry["درجة التجميع (A/D، من 5)"] = accum_score
+                            whale_entry["RVOL"] = round(rvol, 2)
+                            whale_accumulation_results.append(whale_entry)
 
                     # ===============================================================
                     # سادساً: زخم متعدد الآجال - تصنيف مستقل عن الأربعة فوق (سهم ممكن
@@ -3292,6 +3325,22 @@ with tab2:
                     st.dataframe(_df.sort_values(by=_sort, ascending=True), use_container_width=True)
                 else:
                     st.info("لا توجد أسهم هابطة يومياً وأسبوعياً وشهرياً في نفس الوقت حسب الفلاتر الحالية.")
+
+            if "whale_accumulation_cheap" in selected_categories_scan:
+                st.write("---")
+                st.markdown(f"### 🐋 سابعاً: تجميع حيتان في الأسهم الرخيصة (سعر ≤ {whale_cheap_price_threshold})")
+                st.caption(
+                    "⚠️ بيستخدم ميل خط Accumulation/Distribution (آخر 10 جلسات) + RVOL - "
+                    "تصنيف وصفي بس يشير لاحتمال تجميع هادئ، **مش توصية شراء ومفيهوش تأكيد "
+                    "إن ده فعلاً 'حيتان' بالمعنى الحرفي**. مستقل عن باقي الفئات فوق - سهم ممكن "
+                    "يظهر هنا وفي فئة تانية مع بعض."
+                )
+                if whale_accumulation_results:
+                    _df = pd.DataFrame(whale_accumulation_results)
+                    _sort = "درجة التجميع (A/D، من 5)" if "درجة التجميع (A/D، من 5)" in _df.columns else EAGLE_COL
+                    st.dataframe(_df.sort_values(by=_sort, ascending=False), use_container_width=True)
+                else:
+                    st.info("لا توجد أسهم رخيصة بإشارات تجميع واضحة حسب الفلاتر الحالية.")
 
             # --- الملخص الشامل: التوصية النهائية (فني + مالي مع بعض) عبر كل الفئات ---
             st.markdown("---")
@@ -3958,7 +4007,7 @@ with tab6:
         "لأي سهم مصري/أمريكي/إماراتي، أو عملة رقمية، أو معدن، أو عملة أجنبية."
     )
 
-    qc1, qc2 = st.columns(2)
+    qc1, qc2, qc3 = st.columns(3)
     with qc1:
         quick_asset_type = st.radio(
             "نوع الأصل:", options=["stock", "crypto", "metals", "fx"],
@@ -3970,26 +4019,72 @@ with tab6:
         )
     with qc2:
         quick_days = st.slider("عدد الجلسات السابقة (أقصاها أسبوع):", min_value=1, max_value=7, value=5, key="quick_days")
+    with qc3:
+        quick_input_mode = st.radio(
+            "طريقة الاختيار:", options=["list", "manual"],
+            format_func=lambda k: {"list": "📋 من القايمة", "manual": "⌨️ كتابة الرمز يدوي"}[k],
+            horizontal=True, key="quick_input_mode",
+        )
 
-    if quick_asset_type == "stock":
-        qm1, qm2 = st.columns(2)
+    quick_ticker, quick_label, quick_sector_display = None, None, None
+
+    if quick_input_mode == "manual":
+        manual_hint = {
+            "stock": "مثال: ABUK.CA (مصر) / AAPL (أمريكا) / EMAAR.AE (الإمارات)",
+            "crypto": "مثال: BTC-USD، DOGE-USD",
+            "metals": "مثال: GC=F (ذهب)، SI=F (فضة)، PL=F (بلاتين)",
+            "fx": "مثال: EURUSD=X، GBPUSD=X، USDJPY=X",
+        }[quick_asset_type]
+        quick_manual_input = st.text_input(
+            "اكتب الرمز بنفس صيغة Yahoo Finance:", placeholder=manual_hint, key="quick_manual_ticker",
+        )
+        if quick_manual_input and quick_manual_input.strip():
+            quick_ticker = quick_manual_input.strip().upper()
+            quick_label = quick_ticker
+            if quick_asset_type == "stock":
+                quick_sector_display = get_sector(quick_ticker)
+        st.caption("⚠️ الكتابة اليدوية مفيدة لسهم مش موجود في قايمتنا الجاهزة - لازم تكتب الرمز بصيغة Yahoo الصحيحة.")
+
+    elif quick_asset_type == "stock":
+        qm1, qm2, qm3 = st.columns(3)
         with qm1:
             quick_market = st.selectbox(
                 "السوق:", options=list(MARKETS.keys()),
                 format_func=lambda k: MARKETS[k]["label"], key="quick_market",
             )
-        stocks_dict_quick = MARKETS[quick_market]["stocks"]
+        sector_map_quick = MARKETS[quick_market]["sector_map"]
+        stocks_dict_quick_all = MARKETS[quick_market]["stocks"]
+        available_sectors_quick = ["كل القطاعات"] + sorted(set(sector_map_quick.values()))
         with qm2:
-            quick_stock_name = st.selectbox("السهم:", options=list(stocks_dict_quick.keys()), key="quick_stock_name")
-        quick_ticker = stocks_dict_quick[quick_stock_name]
-        quick_label = quick_stock_name
+            quick_sector_filter = st.selectbox("القطاع (اختياري):", options=available_sectors_quick, key="quick_sector_filter")
+
+        if quick_sector_filter == "كل القطاعات":
+            stocks_dict_quick = stocks_dict_quick_all
+        else:
+            stocks_dict_quick = {
+                name: t for name, t in stocks_dict_quick_all.items()
+                if sector_map_quick.get(t) == quick_sector_filter
+            }
+
+        with qm3:
+            if stocks_dict_quick:
+                quick_stock_name = st.selectbox("السهم:", options=list(stocks_dict_quick.keys()), key="quick_stock_name")
+                quick_ticker = stocks_dict_quick[quick_stock_name]
+                quick_label = quick_stock_name
+                quick_sector_display = sector_map_quick.get(quick_ticker, "غير مصنف")
+            else:
+                st.warning("⚪ مفيش أسهم مصنّفة تحت هذا القطاع.")
+
     else:
         quick_options = GLOBAL_ASSETS[quick_asset_type]
         quick_name = st.selectbox("الأصل:", options=list(quick_options.keys()), key="quick_global_name")
         quick_ticker = quick_options[quick_name]
         quick_label = quick_name
 
-    if st.button("🔍 عرض آخر الإغلاقات", key="quick_closes_btn"):
+    if quick_sector_display:
+        st.caption(f"🏷️ القطاع: {quick_sector_display}")
+
+    if quick_ticker and st.button("🔍 عرض آخر الإغلاقات", key="quick_closes_btn"):
         with st.spinner(f"جاري جلب آخر أسعار {quick_label}..."):
             try:
                 df_quick = fetch_single_stock(quick_ticker, period="60d")
@@ -4026,4 +4121,5 @@ with tab6:
 
                 result_df = pd.DataFrame(rows).sort_values("التاريخ", ascending=False)
                 st.dataframe(result_df, use_container_width=True, hide_index=True)
-                st.caption(f"📌 {quick_label} ({quick_ticker}) — آخر {len(result_df)} جلسة تداول متاحة من المصدر.")
+                sector_suffix = f" — القطاع: {quick_sector_display}" if quick_sector_display else ""
+                st.caption(f"📌 {quick_label} ({quick_ticker}){sector_suffix} — آخر {len(result_df)} جلسة تداول متاحة من المصدر.")
