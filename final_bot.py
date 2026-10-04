@@ -3235,40 +3235,42 @@ with tab2:
 
             st.success("تم التحديث النهائي والإغلاق الهندسي للرادار بنجاح! 🦅")
             
-            # --- آلية الإرسال المعدلة لـ 5 فرص ---
-            telegram_msg = "🦅 *تقرير قناص البورصة المصرية اللحظي* 🇪🇬\n\n"
-            
-            if fresh_cross_results:
-                telegram_msg += "🌟 *أسهم تأسيس المركز (قاع صاعد):*\n"
-                for item in fresh_cross_results[:5]: # تم التعديل لـ 5
-                    telegram_msg += f"- {item['اسم الشركة']} ({item['السعر الحالي']} {item.get('العملة', 'EGP')})\n"
-                telegram_msg += "\n"
-                
-            if long_term_investment:
-                # ترتيب واختيار أعلى 5 أسهم استثمار
-                _lt_df = pd.DataFrame(long_term_investment)
-                _sort_col = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in _lt_df.columns else "النقاط الفنية والسيولة (من 100)"
-                top_inv = _lt_df.sort_values(by=_sort_col, ascending=False).head(5) # تم التعديل لـ 5
-                telegram_msg += "📈 *أقوى أسهم الاتجاه الصاعد المستقر:*\n"
-                for _, row_inv in top_inv.iterrows():
-                    telegram_msg += f"- {row_inv['اسم الشركة']} | السعر: {row_inv['السعر الحالي']} {row_inv.get('العملة', 'EGP')} | النقاط: {row_inv['النقاط الفنية والسيولة (من 100)']}\n"
-                telegram_msg += "\n"
-                
-            if short_term_trading:
-                # ترتيب واختيار أعلى 5 أسهم مضاربة
-                top_trade = pd.DataFrame(short_term_trading).sort_values(by="النقاط الفنية والسيولة (من 100)", ascending=False).head(5) # تم التعديل لـ 5
-                telegram_msg += "⚡ *أقوى أسهم المضاربة اللحظية وعزم السيولة:*\n"
-                for _, row_tr in top_trade.iterrows():
-                    telegram_msg += f"- {row_tr['اسم الشركة']} | السعر: {row_tr['السعر الحالي']} {row_tr.get('العملة', 'EGP')}\n"
-            
-            # إرسال الرسالة الكاملة والملخصة مرة واحدة فقط
-            tg_success, tg_status_msg = send_telegram_alert(telegram_msg)
-            if TELEGRAM_TOKEN or default_token or TELEGRAM_CHAT_ID or default_chat_id:
-                # منعرضش حاجة لو المستخدم أصلاً مالوش إعدادات تليجرام متسجلة
-                if tg_success:
-                    st.sidebar.success(tg_status_msg)
-                else:
-                    st.sidebar.error(tg_status_msg)
+            # --- رسايل تليجرام: بس الأسهم "الموصى بشرائها" (ترتيب_التوصية == 0) ---
+            # 🔧 تعديل بطلب المستخدم: الرسالة بقت تُفلتر على "التوصية" الموحّدة
+            # (فني + مالي مع بعض، نفس عمود "التوصية" المستخدم في قسم خامساً) -
+            # مش بس فئة فنية خام زي قبل. وبقى العنوان ديناميكي حسب السوق/الأسواق
+            # المختارة فعلياً، مش مثبّت على "البورصة المصرية" دايماً.
+            all_scanned_results_tg = fresh_cross_results + bottom_accumulation_results + short_term_trading + long_term_investment
+            buy_only_results_tg = [item for item in all_scanned_results_tg if item.get("ترتيب_التوصية") == 0]
+
+            if buy_only_results_tg:
+                scanned_markets_label = (
+                    " + ".join(MARKETS[mk]["label"] for mk in market_choice_scan)
+                    if market_choice_scan else "السوق المختار"
+                )
+                telegram_msg = f"🦅 *تقرير قناص الأسهم الموصى بشرائها فنياً ومالياً* ({scanned_markets_label})\n\n"
+
+                _buy_df = pd.DataFrame(buy_only_results_tg)
+                _sort_col_tg = "الدرجة الشاملة (فني+مالي)" if "الدرجة الشاملة (فني+مالي)" in _buy_df.columns else "النقاط الفنية والسيولة (من 100)"
+                top_buys_tg = _buy_df.sort_values(by=_sort_col_tg, ascending=False, na_position="last").head(10)
+
+                telegram_msg += "🟢 *الأسهم الموصى بشرائها (فني + مالي مع بعض):*\n"
+                for _, row_buy in top_buys_tg.iterrows():
+                    telegram_msg += (
+                        f"- {row_buy['اسم الشركة']} ({row_buy.get('الرمز البرمجي', '')}) | "
+                        f"السعر: {row_buy['السعر الحالي']} {row_buy.get('العملة', '')} | "
+                        f"{row_buy.get('التقييم الفني', '')}\n"
+                    )
+
+                tg_success, tg_status_msg = send_telegram_alert(telegram_msg)
+                if TELEGRAM_TOKEN or default_token or TELEGRAM_CHAT_ID or default_chat_id:
+                    # منعرضش حاجة لو المستخدم أصلاً مالوش إعدادات تليجرام متسجلة
+                    if tg_success:
+                        st.sidebar.success(tg_status_msg)
+                    else:
+                        st.sidebar.error(tg_status_msg)
+            elif TELEGRAM_TOKEN or default_token or TELEGRAM_CHAT_ID or default_chat_id:
+                st.sidebar.info("ℹ️ مفيش أسهم 'موصى بشرائها' في هذا المسح - مفيش رسالة تليجرام هتُبعت (تجنباً لإشعارات فاضية).")
             
             # عرض الجداول على الشاشة
             EAGLE_COL = "🦅 Eagle Score (100)"
@@ -3695,6 +3697,55 @@ with tab4:
             "الكامل** لأن مكوّناته (السيولة بالجنيه، القطاع، فاندمنتال جراهام) مصممة لأسهم مصر "
             "بس وتطبيقها هنا هيدّي نتيجة مضلّلة."
         )
+
+        st.markdown("---")
+        st.markdown("###### 🔔 فحص شامل + تنبيه تليجرام: كريبتو ومعادن بقراءة فنية إيجابية بس")
+        st.caption(
+            "🔧 بناءً على طلب المستخدم: تنبيهات تليجرام بقت تُفلتر على 'الموصى به للشراء' بس، "
+            "سواء أسهم (مصري/أمريكي/إماراتي) أو عملات رقمية أو معادن. العملات الرقمية والمعادن "
+            "مفيش لها فاندمنتال حقيقي (راجع قسم الفاندمنتال تحت)، فمعيار 'الموصى به' هنا هو "
+            "**القراءة الفنية الإيجابية بس** (🟢 قراءة فنية إيجابية) - مش قرار مالي كامل زي الأسهم."
+        )
+        if st.button("🔍 فحص كل الكريبتو والمعادن وإرسال تنبيه بالموصى به فنياً", key="scan_crypto_metals_btn"):
+            buy_only_crypto_metals = []
+            scan_targets = list(GLOBAL_ASSETS["crypto"].items()) + list(GLOBAL_ASSETS["metals"].items())
+            progress_cm = st.progress(0.0)
+            for i, (name, ticker) in enumerate(scan_targets):
+                progress_cm.progress((i + 1) / len(scan_targets), text=f"جاري فحص: {name} ({i + 1}/{len(scan_targets)})")
+                asset_class_for_ticker = "crypto" if ticker in GLOBAL_ASSETS["crypto"].values() else "metals"
+                try:
+                    res_cm = analyze_global_asset_technical(ticker, asset_class_for_ticker)
+                except Exception:
+                    res_cm = None
+                if res_cm and res_cm.get("technical_read", "").startswith("🟢"):
+                    buy_only_crypto_metals.append({
+                        "name": name, "ticker": ticker, "asset_class": asset_class_for_ticker,
+                        "price": res_cm["price"], "technical_total": res_cm["technical_total"],
+                        "technical_read": res_cm["technical_read"],
+                    })
+            progress_cm.empty()
+
+            if buy_only_crypto_metals:
+                st.success(f"✅ لقينا {len(buy_only_crypto_metals)} أصل بقراءة فنية إيجابية.")
+                st.dataframe(pd.DataFrame(buy_only_crypto_metals), use_container_width=True, hide_index=True)
+
+                tg_msg_cm = "🦅 *تنبيه: كريبتو/معادن بقراءة فنية إيجابية* 🟢\n\n"
+                for item in sorted(buy_only_crypto_metals, key=lambda x: x["technical_total"], reverse=True):
+                    price_fmt_cm = f"{item['price']:,.2f}"
+                    tg_msg_cm += f"- {item['name']} ({item['ticker']}) | السعر: ${price_fmt_cm} | الدرجة الفنية: {item['technical_total']}\n"
+                tg_msg_cm += "\n⚠️ قراءة فنية بحتة (Trend+Momentum+Volume) - مفيهوش فاندمنتال حقيقي لهذا النوع من الأصول."
+
+                tg_success_cm, tg_status_cm = send_telegram_alert(tg_msg_cm)
+                if TELEGRAM_TOKEN or default_token or TELEGRAM_CHAT_ID or default_chat_id:
+                    if tg_success_cm:
+                        st.sidebar.success(tg_status_cm)
+                    else:
+                        st.sidebar.error(tg_status_cm)
+            else:
+                st.info("⚪ مفيش كريبتو أو معدن بقراءة فنية إيجابية دلوقتي - مفيش رسالة تليجرام هتُبعت.")
+
+        st.markdown("---")
+        st.markdown("###### 🔍 تحليل أصل واحد بالتفصيل")
 
         dcol1, dcol2 = st.columns(2)
         with dcol1:
