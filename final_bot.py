@@ -2193,7 +2193,18 @@ with tab1:
                     _weekly_pct = _pb_mag.get("5d_%")
                     _monthly_pct = _pb_mag.get("20d_%")
                     _price_up_today = bool(_pb_mag.get("daily_%") is not None and _pb_mag["daily_%"] > 0)
-                    _started_today = bool(_price_up_today and up_streak == 1)
+                    # 🐛 نفس إصلاح الباگ بتاع tab2 - لازم السهم ماكانش صاعد بالفعل
+                    # خلال الأسبوع اللي قبل اليوم (مستثنين اليوم نفسه) قبل ما نعتبرها
+                    # بداية صعود حقيقية، مش مجرد استمرار اتجاه صاعد قائم من قبل.
+                    _prior_week_return_excl_today = None
+                    if len(df) >= 7:
+                        _prior_week_return_excl_today = round(
+                            (float(df["Close"].iloc[-2]) / float(df["Close"].iloc[-7]) - 1) * 100, 2
+                        )
+                    _started_today = bool(
+                        _price_up_today and up_streak == 1
+                        and _prior_week_return_excl_today is not None and _prior_week_return_excl_today <= 2.0
+                    )
                     _bullish_all_tf = bool(_price_up_today and _weekly_pct is not None and _weekly_pct > 0 and _monthly_pct is not None and _monthly_pct > 0)
                     _bearish_all_tf = bool((not _price_up_today) and _weekly_pct is not None and _weekly_pct < 0 and _monthly_pct is not None and _monthly_pct < 0)
                     _momentum_tags = []
@@ -3058,7 +3069,22 @@ with tab2:
                     pb_magnitude = compute_price_change_magnitude(stock_df)
                     weekly_change_pct = pb_magnitude.get("5d_%")
                     monthly_change_pct = pb_magnitude.get("20d_%")
-                    started_rising_today = bool(price_up_today and up_streak == 1)
+                    # 🐛 إصلاح باگ (تقرير مستخدم 2026-10-04): up_streak==1 لوحده مش كافي
+                    # لإثبات "بداية صعود اليوم" - سهم صاعد من شهر ممكن يوقف يوم واحد
+                    # بس (يصفّر الـstreak) وبعدين يرتد، فيُعتبر غلط "بداية صعود" مع إنه
+                    # فعلياً مستمر في اتجاه صاعد قائم من قبل. الإصلاح: لازم نتأكد إن
+                    # السهم ماكانش بالفعل صاعد خلال الأسبوع اللي قبل اليوم (مستثنين
+                    # تأثير اليوم نفسه من الحساب) قبل ما نعتبرها بداية حقيقية.
+                    prior_week_return_excl_today = None
+                    if len(stock_df) >= 7:
+                        _close_series_pwr = stock_df["Close"]
+                        prior_week_return_excl_today = round(
+                            (float(_close_series_pwr.iloc[-2]) / float(_close_series_pwr.iloc[-7]) - 1) * 100, 2
+                        )
+                    started_rising_today = bool(
+                        price_up_today and up_streak == 1
+                        and prior_week_return_excl_today is not None and prior_week_return_excl_today <= 2.0
+                    )
                     is_bullish_all_tf = bool(
                         price_up_today and weekly_change_pct is not None and weekly_change_pct > 0
                         and monthly_change_pct is not None and monthly_change_pct > 0
